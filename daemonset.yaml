@@ -23,7 +23,7 @@ spec:
       # Privileged mode for packet capture (in production, use specific capabilities)
       containers:
       - name: traffic-monitor
-        image: traffic-monitor:v10
+        image: traffic-monitor:v11
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true

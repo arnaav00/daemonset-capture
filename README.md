@@ -7,7 +7,8 @@ A proof-of-concept DaemonSet that passively captures HTTP/HTTPS API endpoint tra
 - **Passive Traffic Capture**: Monitors all HTTP/HTTPS traffic on each Kubernetes node
 - **Zero Latency**: Non-intrusive packet capture without affecting application performance
 - **Endpoint Discovery**: Automatically discovers and captures all API endpoints (GET, POST, PUT, DELETE, etc.)
-- **Structured Output**: Exports captured endpoints to JSON format with request/response details
+- **Multi-Service Support**: Captures traffic from multiple services simultaneously and identifies the source service
+- **Structured Output**: Exports captured endpoints to JSON format with request/response details and service identification
 
 ## Quick Start
 
@@ -17,14 +18,14 @@ A proof-of-concept DaemonSet that passively captures HTTP/HTTPS API endpoint tra
 # Build traffic monitor
 docker build -t traffic-monitor:latest .
 
-# Build example API
+# Build example API (Service 1)
 cd example-app
 docker build -t example-api:latest .
 cd ..
 
-# Build UI
-cd ui
-docker build -t api-ui:latest .
+# Build order service (Service 2)
+cd example-app-2
+docker build -t order-service:latest .
 cd ..
 ```
 
@@ -34,29 +35,22 @@ cd ..
 # Deploy traffic monitor DaemonSet
 kubectl apply -f daemonset.yaml
 
-# Deploy example API
+# Deploy example API (Service 1)
 kubectl apply -f example-app/deployment.yaml
 
-# Deploy UI (optional)
-kubectl apply -f ui/deployment.yaml
+# Deploy order service (Service 2)
+kubectl apply -f example-app-2/deployment.yaml
 ```
 
 ### 3. Generate Traffic
 
-**Option A: Manual API Calls**
+The traffic monitor will automatically capture traffic from all services. Use the manual calls script to generate traffic for both services:
+
 ```powershell
 .\manual-calls.ps1
 ```
 
-**Option B: Web UI**
-```powershell
-# Get UI service URL
-kubectl get svc api-ui
-
-# Port forward to access UI
-kubectl port-forward svc/api-ui 8080:80
-```
-Then open http://localhost:8080
+This will make API calls to both `example-api` and `order-service`, and the traffic monitor will capture all requests/responses with service identification.
 
 ### 4. Extract Captured Endpoints
 
@@ -78,9 +72,12 @@ Captured endpoints are saved to `captured-endpoints.json` with the following fie
 - `timestamp` - Request/response timestamp
 - `status_code` - HTTP status code (responses only)
 - `status_text` - HTTP status text (responses only)
+- `service` - Service identifier (e.g., "example-api", "order-service")
 - `method` - HTTP method (GET, POST, PUT, DELETE, etc.)
 - `endpoint` - API endpoint path
 - `full_url` - Complete request URL
 - `type` - "request" or "response"
 - `headers` - Request/response headers
+
+The `service` field allows you to identify which service each endpoint belongs to, making it easy to filter and analyze traffic by service.
 

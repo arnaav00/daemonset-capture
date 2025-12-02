@@ -41,6 +41,29 @@ class TrafficMonitor:
         # Start output writer thread
         self.writer_thread = threading.Thread(target=self._write_outputs, daemon=True)
         self.writer_thread.start()
+    
+    def _extract_service_name(self, host: str) -> str:
+        """Extract service name from Host header or IP address"""
+        if not host:
+            return "unknown"
+        
+        # Remove port if present (e.g., "example-api:8080" -> "example-api")
+        host_without_port = host.split(':')[0]
+        
+        # Extract service name from FQDN (e.g., "example-api.default.svc.cluster.local" -> "example-api")
+        # In Kubernetes, service names are the first part before the first dot
+        service_name = host_without_port.split('.')[0]
+        
+        # If it's an IP address, try to resolve or return a generic identifier
+        # For now, we'll use "unknown" for IPs that don't resolve to service names
+        # In a production system, you might want to query Kubernetes API to map IPs to services
+        try:
+            # Check if it's an IP address
+            socket.inet_aton(service_name)
+            return "unknown"  # It's an IP, not a service name
+        except (socket.error, ValueError):
+            # Not an IP, assume it's a service name
+            return service_name
         
     def _write_outputs(self):
         """Write captured endpoints to file periodically"""
@@ -116,11 +139,15 @@ class TrafficMonitor:
             if ':' in str(dst_port) and dst_port != 80 and dst_port != 443:
                 host = f"{host}:{dst_port}"
             
+            # Extract service name from host
+            service_name = self._extract_service_name(host)
+            
             endpoint_data = {
                 "id": str(uuid.uuid4()),
                 "type": "request",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "node": self.node_name,
+                "service": service_name,
                 "method": method,
                 "endpoint": path,
                 "full_url": f"http://{host}{path}",
@@ -179,15 +206,20 @@ class TrafficMonitor:
             # Try to match with request if available
             request_info = self.http_connections.get(connection_key, {})
             
+            # Extract service name from host (use stored host from request, or extract from IP)
+            host = request_info.get("host", dst_ip)
+            service_name = request_info.get("service", self._extract_service_name(host))
+            
             endpoint_data = {
                 "id": str(uuid.uuid4()),
                 "type": "response",
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "node": self.node_name,
+                "service": service_name,
                 "method": request_info.get("method", "UNKNOWN"),
                 "endpoint": request_info.get("endpoint", "/"),
-                "full_url": f"http://{request_info.get('host', dst_ip)}{request_info.get('endpoint', '/')}",
-                "host": request_info.get("host", dst_ip),
+                "full_url": f"http://{host}{request_info.get('endpoint', '/')}",
+                "host": host,
                 "protocol": "HTTP",
                 "status_code": status_code,
                 "status_text": status_text,
@@ -251,7 +283,8 @@ class TrafficMonitor:
             self.http_connections[connection_key] = {
                 "method": endpoint["method"],
                 "endpoint": endpoint["endpoint"],
-                "host": endpoint["host"]
+                "host": endpoint["host"],
+                "service": endpoint.get("service", "unknown")
             }
             self.output_queue.put(endpoint)
             # Clear the stream after successful parse

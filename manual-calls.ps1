@@ -1,9 +1,8 @@
 # Manual API Calls Script
-# This script makes direct calls to the example API endpoints
+# This script makes direct calls to both example API services
 # All traffic will be passively captured by the traffic monitor DaemonSet
 
 param(
-    [string]$ApiService = "example-api",
     [string]$Namespace = "default"
 )
 
@@ -13,28 +12,19 @@ Write-Host "  All requests will be captured by DaemonSet" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Get the service IP
-$serviceIP = kubectl get svc $ApiService -n $Namespace -o jsonpath='{.spec.clusterIP}' 2>$null
-if (-not $serviceIP) {
-    Write-Host "ERROR: Service $ApiService not found in namespace $Namespace" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Service IP: $serviceIP" -ForegroundColor Green
-Write-Host ""
-
 # Helper function to make API calls
 function Invoke-ApiCall {
     param(
+        [string]$Service,
         [string]$Method,
         [string]$Path,
         [string]$Body = $null
     )
     
-    Write-Host "[$Method] $Path" -ForegroundColor Cyan
+    Write-Host "[$Service] [$Method] $Path" -ForegroundColor Cyan
     
     $podName = "curl-manual-$(Get-Random)"
-    $url = "http://$ApiService$Path"
+    $url = "http://$Service$Path"
     
     if ($Body) {
         kubectl run $podName --image=curlimages/curl --restart=Never --rm -i -- curl -s -X $Method $url -H "Content-Type: application/json" -d $Body 2>&1 | Out-Null
@@ -45,35 +35,66 @@ function Invoke-ApiCall {
     Start-Sleep -Seconds 1
 }
 
-Write-Host "=== Making API Calls ===" -ForegroundColor Yellow
+Write-Host "=== Making API Calls to example-api ===" -ForegroundColor Yellow
 Write-Host ""
 
 # Health check
-Invoke-ApiCall -Method "GET" -Path "/"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/"
 
 # Users
-Invoke-ApiCall -Method "GET" -Path "/api/v1/users"
-Invoke-ApiCall -Method "GET" -Path "/api/v1/users/1"
-Invoke-ApiCall -Method "GET" -Path "/api/v1/users/2"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/users"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/users/1"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/users/2"
 
 # Create user
-Invoke-ApiCall -Method "POST" -Path "/api/v1/users" -Body '{\"name\":\"Test User\",\"email\":\"test@example.com\"}'
+Invoke-ApiCall -Service "example-api" -Method "POST" -Path "/api/v1/users" -Body '{\"name\":\"Test User\",\"email\":\"test@example.com\"}'
 
 # Update user
-Invoke-ApiCall -Method "PUT" -Path "/api/v1/users/1" -Body '{\"name\":\"Updated Name\"}'
+Invoke-ApiCall -Service "example-api" -Method "PUT" -Path "/api/v1/users/1" -Body '{\"name\":\"Updated Name\"}'
 
 # Products
-Invoke-ApiCall -Method "GET" -Path "/api/v1/products"
-Invoke-ApiCall -Method "GET" -Path "/api/v1/products/1"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/products"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/products/1"
 
 # Create product
-Invoke-ApiCall -Method "POST" -Path "/api/v1/products" -Body '{\"name\":\"New Product\",\"price\":49.99,\"stock\":20}'
+Invoke-ApiCall -Service "example-api" -Method "POST" -Path "/api/v1/products" -Body '{\"name\":\"New Product\",\"price\":49.99,\"stock\":20}'
 
 # Search
-Invoke-ApiCall -Method "GET" -Path "/api/v1/search?q=Alice"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/search?q=Alice"
 
 # Delete user
-Invoke-ApiCall -Method "DELETE" -Path "/api/v1/users/3"
+Invoke-ApiCall -Service "example-api" -Method "DELETE" -Path "/api/v1/users/3"
+
+Write-Host ""
+Write-Host "=== Making API Calls to order-service ===" -ForegroundColor Yellow
+Write-Host ""
+
+# Health check
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/"
+
+# Orders
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders"
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders/1"
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders/2"
+
+# Create order
+Invoke-ApiCall -Service "order-service" -Method "POST" -Path "/api/v2/orders" -Body '{\"customer\":\"Jane Doe\",\"total\":125.75,\"status\":\"pending\"}'
+
+# Update order
+Invoke-ApiCall -Service "order-service" -Method "PUT" -Path "/api/v2/orders/1" -Body '{\"status\":\"completed\"}'
+
+# Inventory
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/inventory"
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/inventory/1"
+
+# Create inventory item
+Invoke-ApiCall -Service "order-service" -Method "POST" -Path "/api/v2/inventory" -Body '{\"item\":\"Widget X\",\"quantity\":75,\"location\":\"Warehouse 3\"}'
+
+# Sales report
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/reports/sales"
+
+# Delete order
+Invoke-ApiCall -Service "order-service" -Method "DELETE" -Path "/api/v2/orders/3"
 
 Write-Host ""
 Write-Host "=== All API calls completed ===" -ForegroundColor Green

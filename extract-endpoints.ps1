@@ -168,7 +168,10 @@ foreach ($endpoint in $endpoints) {
         $filtered["status_text"] = $endpoint.status_text
     }
     
-    # Add method, endpoint, full_url, type (request/response)
+    # Add service, method, endpoint, full_url, type (request/response)
+    if ($endpoint.service) {
+        $filtered["service"] = $endpoint.service
+    }
     $filtered["method"] = $endpoint.method
     $filtered["endpoint"] = $endpoint.endpoint
     $filtered["full_url"] = $endpoint.full_url
