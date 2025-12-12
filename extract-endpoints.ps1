@@ -184,6 +184,14 @@ foreach ($endpoint in $endpoints) {
         $filtered["headers"] = $endpoint.response_headers
     }
     
+    # Add request/response body if available
+    if ($endpoint.request_body) {
+        $filtered["request_body"] = $endpoint.request_body
+    }
+    if ($endpoint.response_body) {
+        $filtered["response_body"] = $endpoint.response_body
+    }
+    
     $filteredEndpoints += $filtered
 }
 

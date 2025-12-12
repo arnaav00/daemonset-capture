@@ -1,6 +1,6 @@
 # Kubernetes DaemonSet Traffic Monitor
 
-A proof-of-concept DaemonSet that passively captures HTTP/HTTPS API endpoint traffic at the node level in Kubernetes clusters. Similar to Datadog's DaemonSet agent approach, it provides zero-latency network monitoring without modifying application code.
+A DaemonSet that passively captures HTTP/HTTPS API endpoint traffic at the node level in Kubernetes clusters and automatically pushes endpoints to the APISec platform. Provides zero-latency network monitoring without modifying application code.
 
 ## What It Does
 
@@ -8,7 +8,9 @@ A proof-of-concept DaemonSet that passively captures HTTP/HTTPS API endpoint tra
 - **Zero Latency**: Non-intrusive packet capture without affecting application performance
 - **Endpoint Discovery**: Automatically discovers and captures all API endpoints (GET, POST, PUT, DELETE, etc.)
 - **Multi-Service Support**: Captures traffic from multiple services simultaneously and identifies the source service
-- **Structured Output**: Exports captured endpoints to JSON format with request/response details and service identification
+- **Automatic Push to APISec Platform**: Pushes captured endpoints directly to the dev website
+- **Auto-Onboarding**: Automatically creates applications for new services (optional)
+- **Smart Endpoint Management**: Checks if endpoints exist and updates or creates accordingly
 
 ## Quick Start
 
@@ -34,6 +36,7 @@ cd ..
 ```powershell
 # Deploy traffic monitor DaemonSet
 kubectl apply -f daemonset.yaml
+kubectl apply -f configmap.yaml
 
 # Deploy example API (Service 1)
 kubectl apply -f example-app/deployment.yaml
@@ -52,32 +55,59 @@ The traffic monitor will automatically capture traffic from all services. Use th
 
 This will make API calls to both `example-api` and `order-service`, and the traffic monitor will capture all requests/responses with service identification.
 
-### 4. Extract Captured Endpoints
+### 4. Configure Service Mappings
 
-```powershell
-# Extract endpoints (filters health checks by default)
-.\extract-endpoints.ps1
+Edit `configmap.yaml` to map your services to APISec platform applications:
 
-# Include health checks
-.\extract-endpoints.ps1 -SkipHealthChecks:$false
-
-# Clear captured data
-.\clear-captures.ps1
+```yaml
+data:
+  service_config.json: |
+    {
+      "apiKey": "YOUR_API_KEY_HERE",
+      "autoOnboardNewServices": false,
+      "devApiUrl": "https://api.dev.apisecapps.com",
+      "serviceMappings": {
+        "example-api": {
+          "appId": "your-application-id",
+          "instanceId": "your-instance-id"
+        },
+        "order-service": {
+          "appId": "your-application-id",
+          "instanceId": "your-instance-id"
+        }
+      }
+    }
 ```
 
-## Output Format
+**Important**:
+- Set `apiKey` (top-level, shared across all services)
+- For each service, provide `appId` and `instanceId` from the APISec platform
+- Set `autoOnboardNewServices: true` to automatically create applications for unmapped services
 
-Captured endpoints are saved to `captured-endpoints.json` with the following fields:
-- `id` - Unique identifier
-- `timestamp` - Request/response timestamp
-- `status_code` - HTTP status code (responses only)
-- `status_text` - HTTP status text (responses only)
-- `service` - Service identifier (e.g., "example-api", "order-service")
-- `method` - HTTP method (GET, POST, PUT, DELETE, etc.)
-- `endpoint` - API endpoint path
-- `full_url` - Complete request URL
-- `type` - "request" or "response"
-- `headers` - Request/response headers
+### 5. Deploy Configuration
 
-The `service` field allows you to identify which service each endpoint belongs to, making it easy to filter and analyze traffic by service.
+```powershell
+kubectl apply -f configmap.yaml
+kubectl delete pod -n kube-system -l app=traffic-monitor  # Restart to pick up config
+```
+
+### 6. Enable Integration
+
+Edit `daemonset.yaml` and set:
+```yaml
+- name: ENABLE_DEV_WEBSITE_INTEGRATION
+  value: "true"
+```
+
+Then redeploy:
+```powershell
+kubectl apply -f daemonset.yaml
+```
+
+## Features
+
+- **Endpoint Tracking**: Automatically checks if endpoints exist before creating/updating
+- **Auto-Onboarding**: Creates applications and instances for new services automatically
+- **De-duplication**: Prevents duplicate endpoint pushes
+- **Service Mapping**: Maps Kubernetes services to APISec platform applications
 

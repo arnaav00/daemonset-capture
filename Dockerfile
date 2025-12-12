@@ -15,8 +15,11 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the traffic monitor script
+# Copy all Python scripts
 COPY traffic_monitor.py .
+COPY service_mapper.py .
+COPY api_client.py .
+COPY deduplicator.py .
 
 # Make script executable
 RUN chmod +x traffic_monitor.py

@@ -23,7 +23,8 @@ spec:
       # Privileged mode for packet capture (in production, use specific capabilities)
       containers:
       - name: traffic-monitor
-        image: traffic-monitor:v11
+        image: traffic-monitor:latest
+        imagePullPolicy: Always
         imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true
@@ -39,9 +40,18 @@ spec:
               fieldPath: spec.nodeName
         - name: OUTPUT_FILE
           value: "/tmp/endpoints.json"
+        - name: ENABLE_DEV_WEBSITE_INTEGRATION
+          value: "true"  # Enable dev website integration
+        - name: SERVICE_CONFIG_PATH
+          value: "/etc/traffic-monitor/service_config.json"
+        - name: CLEAR_SAVED_MAPPINGS
+          value: "true"  # Set to true to clear old mappings and force re-onboarding
         volumeMounts:
         - name: endpoints-data
           mountPath: /tmp
+        - name: service-config
+          mountPath: /etc/traffic-monitor
+          readOnly: true
         resources:
           requests:
             memory: "128Mi"
@@ -54,6 +64,9 @@ spec:
         hostPath:
           path: /tmp/traffic-monitor
           type: DirectoryOrCreate
+      - name: service-config
+        configMap:
+          name: traffic-monitor-config
       # Tolerations to run on all nodes including master
       tolerations:
       - operator: Exists

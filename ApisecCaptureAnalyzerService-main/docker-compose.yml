@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: apisec-analyzer-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SESSION_TTL_SECONDS=7200
+      - MAX_CAPTURES_PER_BATCH=50
+      - MAX_CAPTURES_PER_SESSION=1000
+      - SIMILARITY_THRESHOLD=0.70
+      - STORAGE_ENABLED=false
+    volumes:
+      - ./app:/app/app:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Optional: Add Redis for session storage in production
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: apisec-analyzer-redis
+  #   ports:
+  #     - "6379:6379"
+  #   volumes:
+  #     - redis-data:/data
+  #   restart: unless-stopped
+
+# volumes:
+#   redis-data:
+

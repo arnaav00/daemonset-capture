@@ -1,0 +1,177 @@
+{
+  "session_id": "aa04a001-3363-4122-9373-64f27573519e",
+  "analysis_timestamp": "2025-11-13T21:33:45.838499",
+  "total_captures_analyzed": 63,
+  "microservices_identified": 3,
+  "microservices": [
+    {
+      "microservice_id": "ms-e5dc5776-016f-4df9-bd12-e0c257f485bc",
+      "identified_name": "user-service",
+      "confidence_score": 0.97,
+      "base_url": "https://api.example.com/v1/users",
+      "signature": {
+        "primary_response_schema": {
+          "hash": "2da88b904e4864a6"
+        },
+        "common_headers": {
+          "x-powered-by": "present",
+          "x-service-name": "present"
+        },
+        "auth_pattern": "Bearer:header",
+        "server_signature": "nginx/1.18.0/Express",
+        "error_format": null
+      },
+      "endpoints": [
+        {
+          "path": "/v1/users",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/users/{id}",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/users/{id}/profile",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/users/{id}/settings",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/users/search",
+          "methods": [
+            "POST"
+          ],
+          "sample_count": 4
+        }
+      ],
+      "openapi_spec_url": "s3://dev-bucket/aa04a001-3363-4122-9373-64f27573519e/ms-e5dc5776-016f-4df9-bd12-e0c257f485bc.yaml"
+    },
+    {
+      "microservice_id": "ms-3fe8bb08-2e81-46b4-b9c0-510f89efdfec",
+      "identified_name": "order-service",
+      "confidence_score": 0.97,
+      "base_url": "https://api.example.com/v1/orders",
+      "signature": {
+        "primary_response_schema": {
+          "hash": "a5ca5700b4119383"
+        },
+        "common_headers": {
+          "x-powered-by": "present",
+          "x-service-name": "present"
+        },
+        "auth_pattern": "Bearer:header",
+        "server_signature": "Apache-Coyote/1.1/Spring Boot",
+        "error_format": null
+      },
+      "endpoints": [
+        {
+          "path": "/v1/orders",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/orders/ORD-001",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/orders/ORD-002/items",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/orders/ORD-003/status",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/orders/search",
+          "methods": [
+            "POST"
+          ],
+          "sample_count": 4
+        }
+      ],
+      "openapi_spec_url": "s3://dev-bucket/aa04a001-3363-4122-9373-64f27573519e/ms-3fe8bb08-2e81-46b4-b9c0-510f89efdfec.yaml"
+    },
+    {
+      "microservice_id": "ms-8d7c53bf-7101-40b0-b99d-221b713ac502",
+      "identified_name": "payment-service",
+      "confidence_score": 0.97,
+      "base_url": "https://api.example.com/v1/payments",
+      "signature": {
+        "primary_response_schema": {
+          "hash": "b5c63fe7d5ed0f30"
+        },
+        "common_headers": {
+          "x-powered-by": "present",
+          "x-service-name": "present"
+        },
+        "auth_pattern": "Bearer:header",
+        "server_signature": "gunicorn/20.1.0/Flask",
+        "error_format": null
+      },
+      "endpoints": [
+        {
+          "path": "/v1/payments",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/payments/PAY-001",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/payments/PAY-002/refund",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/payments/PAY-003/status",
+          "methods": [
+            "GET"
+          ],
+          "sample_count": 4
+        },
+        {
+          "path": "/v1/payments/process",
+          "methods": [
+            "POST"
+          ],
+          "sample_count": 4
+        }
+      ],
+      "openapi_spec_url": "s3://dev-bucket/aa04a001-3363-4122-9373-64f27573519e/ms-8d7c53bf-7101-40b0-b99d-221b713ac502.yaml"
+    }
+  ],
+  "raw_data_url": "s3://dev-bucket/aa04a001-3363-4122-9373-64f27573519e/raw.json"
+}
