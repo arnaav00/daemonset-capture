@@ -62,6 +62,7 @@ class TrafficMonitor:
         self.endpoint_lock = threading.Lock()
         self.http_connections = {}  # Track HTTP connections
         self.tcp_streams = {}  # Track TCP streams for reassembly
+        self.stream_last_packet_time = {}  # Track when last packet arrived for each stream
         self.output_queue = queue.Queue()
         self.running = True
         
@@ -399,8 +400,55 @@ class TrafficMonitor:
                 self._push_endpoint_to_dev_website(app_id, instance_id, api_key, endpoint)
                 return
             
-            # Create application with empty spec
-            # Use hostUrl: "/" for the instance (as per your manual test)
+            # FIRST: Check if application with this name already exists on the platform
+            print(f"🔍 STEP 1: Checking platform for existing application with name '{service_name}'", file=sys.stderr, flush=True)
+            print(f"  Making GET request to /v1/applications?include=metadata...", file=sys.stderr, flush=True)
+            existing_app = self.api_client.get_application_by_name(service_name, api_key)
+            
+            if existing_app:
+                application_id = existing_app.get("applicationId")
+                instances = existing_app.get("instances", [])
+                print(f"✓ STEP 1 RESULT: Found existing application on platform", file=sys.stderr, flush=True)
+                print(f"  appId: {application_id}", file=sys.stderr, flush=True)
+                print(f"  instances count: {len(instances)}", file=sys.stderr, flush=True)
+                
+                if instances and len(instances) > 0:
+                    instance_id = instances[0].get("instanceId")
+                    instance_name = instances[0].get("instanceName", "unnamed")
+                    print(f"✓ STEP 2: Using existing instance", file=sys.stderr, flush=True)
+                    print(f"  instanceId: {instance_id}", file=sys.stderr, flush=True)
+                    print(f"  instanceName: {instance_name}", file=sys.stderr, flush=True)
+                    
+                    # STEP 3: Save the mapping to prevent future creation
+                    print(f"📝 STEP 3: Saving service mapping to prevent future app creation...", file=sys.stderr, flush=True)
+                    self.service_mapper.set_service_mapping(service_name, application_id, instance_id)
+                    
+                    # STEP 4: Reload config to ensure mapping is loaded
+                    print(f"🔄 STEP 4: Reloading config to verify mapping was saved...", file=sys.stderr, flush=True)
+                    self.service_mapper._load_config()
+                    
+                    # STEP 5: Verify mapping exists (should prevent CREATE APPLICATION)
+                    verify_mapping = self.service_mapper.get_service_mapping(service_name)
+                    if verify_mapping:
+                        print(f"✓ STEP 5: Verified mapping exists - will NOT create new application", file=sys.stderr, flush=True)
+                        print(f"  Saved mapping: appId={verify_mapping.get('appId')}, instanceId={verify_mapping.get('instanceId')}", file=sys.stderr, flush=True)
+                    else:
+                        print(f"⚠️  WARNING: Mapping verification failed, but continuing...", file=sys.stderr, flush=True)
+                    
+                    service_lock.release()
+                    
+                    print(f"✅ SUCCESS: Reused existing application and saved mapping", file=sys.stderr, flush=True)
+                    print(f"  Service: '{service_name}' -> appId={application_id}, instanceId={instance_id}", file=sys.stderr, flush=True)
+                    # Push this endpoint
+                    self._push_endpoint_to_dev_website(application_id, instance_id, api_key, endpoint)
+                    return
+                else:
+                    print(f"⚠️  Existing application has no instances, will create one via create_application()", file=sys.stderr, flush=True)
+            else:
+                print(f"✗ STEP 1 RESULT: No existing application found with name '{service_name}'", file=sys.stderr, flush=True)
+            
+            # No existing application found, create new one
+            print(f"✨ STEP 1 COMPLETE: Proceeding to create new application for '{service_name}'", file=sys.stderr, flush=True)
             result = self.api_client.create_application(
                 service_name=service_name,
                 api_key=api_key
@@ -464,14 +512,19 @@ class TrafficMonitor:
         header_lines = header_data.split(b'\r\n')
         content_length = None
         for line in header_lines[1:]:  # Skip request/status line
+            if not line:  # Empty line indicates end of headers
+                break
             if b':' in line:
                 key, value = line.split(b':', 1)
                 key_lower = key.decode('utf-8', errors='ignore').strip().lower()
                 if key_lower == 'content-length':
                     try:
-                        content_length = int(value.decode('utf-8', errors='ignore').strip())
+                        content_length_str = value.decode('utf-8', errors='ignore').strip()
+                        content_length = int(content_length_str)
+                        print(f"  🔍 DEBUG _is_complete_http_message: Found Content-Length = {content_length} (from header value: '{content_length_str}')", file=sys.stderr, flush=True)
                         break
-                    except ValueError:
+                    except ValueError as e:
+                        print(f"  ⚠️  WARNING: Could not parse Content-Length value '{value.decode('utf-8', errors='ignore')}': {e}", file=sys.stderr, flush=True)
                         pass
         
         # If Content-Length is specified, check if we have the full body
@@ -503,9 +556,11 @@ class TrafficMonitor:
                     print(f"  🔍 Not an HTTP request (first bytes: {repr(first_bytes)})", file=sys.stderr, flush=True)
                 return None
             
-            # Check if we have complete headers
-            if not self._is_complete_http_message(data):
-                print(f"  ⚠️  Incomplete HTTP message (no \\r\\n\\r\\n found)", file=sys.stderr, flush=True)
+            # Note: This check is redundant since _process_tcp_data already checks completeness
+            # But we keep it as a safety check
+            is_complete, _ = self._is_complete_http_message(data)
+            if not is_complete:
+                print(f"  ⚠️  Incomplete HTTP message passed to parser (this shouldn't happen)", file=sys.stderr, flush=True)
                 return None
             
             print(f"  ✓ HTTP request detected, parsing...", file=sys.stderr, flush=True)
@@ -516,11 +571,21 @@ class TrafficMonitor:
                 return None
             
             # Split headers and body (HTTP uses \r\n\r\n separator)
-            if b'\r\n\r\n' in data:
-                header_data, body_data = data.split(b'\r\n\r\n', 1)
-            else:
-                header_data = data
-                body_data = b''
+            if b'\r\n\r\n' not in data:
+                print(f"  ⚠️  ERROR: No \\r\\n\\r\\n separator found in data (length: {len(data)})", file=sys.stderr, flush=True)
+                return None
+            
+            # Split headers and body at \r\n\r\n
+            split_result = data.split(b'\r\n\r\n', 1)
+            if len(split_result) < 2:
+                print(f"  ❌ ERROR: No \\r\\n\\r\\n separator found in data (length: {len(data)})", file=sys.stderr, flush=True)
+                return None
+            
+            header_data = split_result[0]
+            all_body_data = split_result[1]  # Everything after \r\n\r\n
+            header_length = len(header_data) + 4  # +4 for \r\n\r\n
+            
+            print(f"  📐 Header length: {header_length} bytes, Body data available: {len(all_body_data)} bytes", file=sys.stderr, flush=True)
             
             # Parse request line and headers from header_data
             header_lines = header_data.split(b'\r\n')
@@ -538,49 +603,63 @@ class TrafficMonitor:
             
             # Parse headers
             headers = {}
+            content_length = None
             for line in header_lines[1:]:
                 if not line:
                     break
                 if b':' in line:
                     key, value = line.split(b':', 1)
-                    headers[key.decode('utf-8', errors='ignore').strip()] = \
-                        value.decode('utf-8', errors='ignore').strip()
+                    key_str = key.decode('utf-8', errors='ignore').strip()
+                    key_lower = key_str.lower()
+                    value_str = value.decode('utf-8', errors='ignore').strip()
+                    headers[key_str] = value_str
+                    
+                    # Extract Content-Length while parsing headers
+                    if key_lower == 'content-length':
+                        try:
+                            content_length = int(value_str)
+                            print(f"  📏 Content-Length header: {content_length} bytes", file=sys.stderr, flush=True)
+                        except ValueError as e:
+                            print(f"  ⚠️  WARNING: Could not parse Content-Length '{value_str}': {e}", file=sys.stderr, flush=True)
             
             # Extract request body (respect Content-Length if present)
             request_body = ""
-            content_length = None
-            for line in header_lines[1:]:
-                if b':' in line:
-                    key, value = line.split(b':', 1)
-                    key_lower = key.decode('utf-8', errors='ignore').strip().lower()
-                    if key_lower == 'content-length':
-                        try:
-                            content_length = int(value.decode('utf-8', errors='ignore').strip())
-                            break
-                        except ValueError:
-                            pass
-            
-            if body_data:
-                # Only take up to Content-Length bytes if specified
-                if content_length is not None:
-                    if len(body_data) < content_length:
-                        # This shouldn't happen if _is_complete_http_message worked correctly
-                        print(f"  ⚠️  WARNING: Body data ({len(body_data)} bytes) is less than Content-Length ({content_length} bytes)", file=sys.stderr, flush=True)
-                    body_data = body_data[:content_length]
-                    print(f"  📦 Extracted {len(body_data)} bytes of request body (Content-Length: {content_length})", file=sys.stderr, flush=True)
-                else:
-                    print(f"  📦 Extracted {len(body_data)} bytes of request body (no Content-Length)", file=sys.stderr, flush=True)
+            if content_length is not None:
+                # CRITICAL: Take exactly Content-Length bytes from the start of body data
+                # This ensures we don't include any trailing data from subsequent requests
+                if len(all_body_data) < content_length:
+                    print(f"  ❌ CRITICAL: Body data ({len(all_body_data)} bytes) < Content-Length ({content_length} bytes)!", file=sys.stderr, flush=True)
+                    print(f"  ❌ Total data: {len(data)} bytes, Expected total: {header_length + content_length} bytes", file=sys.stderr, flush=True)
+                    return None
                 
+                # Extract exactly Content-Length bytes - no more, no less
+                body_data = all_body_data[:content_length]
+                print(f"  ✅ Extracted exactly {len(body_data)} bytes of body (Content-Length: {content_length})", file=sys.stderr, flush=True)
+            else:
+                # No Content-Length - use all body data (may be empty or chunked)
+                body_data = all_body_data
+                print(f"  📦 Extracted {len(body_data)} bytes of body (no Content-Length header)", file=sys.stderr, flush=True)
+            
+            # Decode body data to string
+            if body_data:
                 try:
                     request_body = body_data.decode('utf-8', errors='replace')
-                    print(f"  ✓ Request body decoded: {repr(request_body[:100])}... (total length: {len(request_body)})", file=sys.stderr, flush=True)
-                except:
+                    if content_length is not None and len(body_data) != content_length:
+                        # UTF-8 decoding might change byte count if there are multi-byte chars, but bytes should match
+                        actual_bytes = len(body_data)
+                        print(f"  ✓ Request body decoded: {repr(request_body[:200])}... (string length: {len(request_body)}, bytes: {actual_bytes})", file=sys.stderr, flush=True)
+                    else:
+                        print(f"  ✓ Request body decoded: {repr(request_body[:200])}... (length: {len(request_body)})", file=sys.stderr, flush=True)
+                except Exception as e:
                     try:
                         request_body = body_data.decode('latin-1', errors='replace')
-                        print(f"  ✓ Request body decoded (latin-1): {repr(request_body[:100])}...", file=sys.stderr, flush=True)
-                    except:
+                        print(f"  ✓ Request body decoded (latin-1): {repr(request_body[:200])}... (length: {len(request_body)})", file=sys.stderr, flush=True)
+                    except Exception as e2:
                         request_body = body_data.hex()  # Fallback to hex for binary data
-                        print(f"  ⚠️  Request body converted to hex (binary data?)", file=sys.stderr, flush=True)
+                        print(f"  ⚠️  Request body converted to hex (binary data?): {str(e)}, {str(e2)}", file=sys.stderr, flush=True)
+            else:
+                request_body = ""
+                print(f"  📭 No body data (expected for {method} requests without body)", file=sys.stderr, flush=True)
             
             host = headers.get('Host', dst_ip)
             
@@ -748,37 +827,110 @@ class TrafficMonitor:
         # Determine which direction this packet belongs to
         if connection_key in self.tcp_streams:
             stream_key = connection_key
+            prev_len = len(self.tcp_streams[stream_key])
             self.tcp_streams[stream_key].extend(data)
+            new_len = len(self.tcp_streams[stream_key])
+            print(f"📥 Packet received: +{len(data)} bytes (stream now: {new_len} bytes, was {prev_len})", file=sys.stderr, flush=True)
         elif reverse_key in self.tcp_streams:
             stream_key = reverse_key
+            prev_len = len(self.tcp_streams[stream_key])
             self.tcp_streams[stream_key].extend(data)
+            new_len = len(self.tcp_streams[stream_key])
+            print(f"📥 Packet received (reverse): +{len(data)} bytes (stream now: {new_len} bytes, was {prev_len})", file=sys.stderr, flush=True)
         else:
             # New stream, create buffer
             stream_key = connection_key
             self.tcp_streams[stream_key] = bytearray(data)
+            print(f"📥 New stream: +{len(data)} bytes (stream now: {len(self.tcp_streams[stream_key])} bytes)", file=sys.stderr, flush=True)
+        
+        # Update last packet time for this stream
+        self.stream_last_packet_time[stream_key] = time.time()
         
         # Get accumulated data
         complete_data = bytes(self.tcp_streams[stream_key])
         
+        # CRITICAL: Check if we have complete headers first (must have \r\n\r\n)
+        if b'\r\n\r\n' not in complete_data:
+            print(f"⏳ Waiting for complete headers (no \\r\\n\\r\\n found yet, have {len(complete_data)} bytes)", file=sys.stderr, flush=True)
+            return
+        
         # Check if we have a complete HTTP message before parsing
         is_complete, expected_length = self._is_complete_http_message(complete_data)
+        
+        # Now check if message is complete
         if not is_complete:
             # Incomplete message, wait for more data
             if expected_length:
-                print(f"⏳ Incomplete HTTP message, waiting for more data (current={len(complete_data)}, need={expected_length})", file=sys.stderr, flush=True)
+                print(f"⏳ Incomplete HTTP message, waiting for more data (current={len(complete_data)}, need={expected_length}, missing={expected_length - len(complete_data)} bytes)", file=sys.stderr, flush=True)
+                # Show what we have so far
+                if b'\r\n\r\n' in complete_data:
+                    header_part, body_part = complete_data.split(b'\r\n\r\n', 1)
+                    print(f"  📋 Headers: {len(header_part)} bytes, Body so far: {len(body_part)} bytes", file=sys.stderr, flush=True)
             else:
-                print(f"⏳ Incomplete HTTP message, waiting for more data (current length={len(complete_data)})", file=sys.stderr, flush=True)
+                print(f"⏳ Incomplete HTTP message, waiting for more data (current length={len(complete_data)}, no Content-Length header yet)", file=sys.stderr, flush=True)
             return
         
-        # Log first 100 bytes for debugging
+        # Log message details for debugging
         if len(complete_data) > 0:
-            preview = complete_data[:100].decode('utf-8', errors='replace')
-            print(f"📄 Complete message (length={len(complete_data)}): {repr(preview[:50])}...", file=sys.stderr, flush=True)
+            preview = complete_data[:200].decode('utf-8', errors='replace')
+            print(f"📄 Attempting to parse message (length={len(complete_data)}): {repr(preview[:100])}...", file=sys.stderr, flush=True)
+            
+            # Check Content-Length in headers if present
+            if b'\r\n\r\n' in complete_data:
+                header_part = complete_data.split(b'\r\n\r\n')[0]
+                body_part = complete_data.split(b'\r\n\r\n', 1)[1] if len(complete_data.split(b'\r\n\r\n')) > 1 else b''
+                header_length = len(header_part) + 4
+                header_lines = header_part.split(b'\r\n')
+                for line in header_lines[1:]:
+                    if not line:  # Empty line
+                        break
+                    if b'Content-Length:' in line or b'content-length:' in line:
+                        cl_val = line.split(b':', 1)[1].strip().decode('utf-8', errors='ignore')
+                        try:
+                            cl_int = int(cl_val)
+                            expected_total = header_length + cl_int
+                            print(f"  📏 Content-Length header: {cl_val} bytes", file=sys.stderr, flush=True)
+                            print(f"  📏 Header: {header_length} bytes, Body available: {len(body_part)} bytes, Expected total: {expected_total} bytes", file=sys.stderr, flush=True)
+                            if len(complete_data) < expected_total:
+                                print(f"  ⚠️  WARNING: Message incomplete! Have {len(complete_data)} bytes, need {expected_total} ({expected_total - len(complete_data)} missing)", file=sys.stderr, flush=True)
+                        except ValueError:
+                            print(f"  📏 Content-Length header: {cl_val} (invalid)", file=sys.stderr, flush=True)
+                        break
         
         # Try parsing as HTTP request first
         endpoint = self._parse_http_request(complete_data, src_ip, dst_ip, src_port, dst_port)
         if endpoint:
-            print(f"✅ Successfully parsed HTTP REQUEST: {endpoint.get('method')} {endpoint.get('endpoint')} (service={endpoint.get('service')})", file=sys.stderr, flush=True)
+            method = endpoint.get('method', 'UNKNOWN')
+            endpoint_path = endpoint.get('endpoint', '/')
+            request_body = endpoint.get('request_body', '')
+            
+            # CRITICAL: Double-check body length matches Content-Length for POST/PUT/PATCH
+            if method in ['POST', 'PUT', 'PATCH']:
+                content_length_header = None
+                if b'\r\n\r\n' in complete_data:
+                    header_part = complete_data.split(b'\r\n\r\n')[0]
+                    header_lines = header_part.split(b'\r\n')
+                    for line in header_lines[1:]:
+                        if not line:
+                            break
+                        if b'Content-Length:' in line or b'content-length:' in line:
+                            try:
+                                content_length_header = int(line.split(b':', 1)[1].strip().decode('utf-8', errors='ignore'))
+                                break
+                            except (ValueError, IndexError):
+                                pass
+                
+                if content_length_header is not None and len(request_body) < content_length_header:
+                    print(f"  ❌ VALIDATION FAILED: Request body length ({len(request_body)}) < Content-Length ({content_length_header})", file=sys.stderr, flush=True)
+                    print(f"  ❌ Discarding endpoint - will wait for more packets", file=sys.stderr, flush=True)
+                    # Don't clear stream - wait for more packets
+                    return
+            
+            print(f"✅ Successfully parsed HTTP REQUEST: {method} {endpoint_path} (service={endpoint.get('service')})", file=sys.stderr, flush=True)
+            if request_body:
+                print(f"  📦 Captured request body: {repr(request_body[:150])} (length: {len(request_body)})", file=sys.stderr, flush=True)
+            else:
+                print(f"  📭 No request body (expected for {method} requests)", file=sys.stderr, flush=True)
             self.http_connections[connection_key] = {
                 "method": endpoint["method"],
                 "endpoint": endpoint["endpoint"],
@@ -789,8 +941,12 @@ class TrafficMonitor:
             # Clear the stream after successful parse
             if connection_key in self.tcp_streams:
                 del self.tcp_streams[connection_key]
+            if connection_key in self.stream_last_packet_time:
+                del self.stream_last_packet_time[connection_key]
             if reverse_key in self.tcp_streams:
                 del self.tcp_streams[reverse_key]
+            if reverse_key in self.stream_last_packet_time:
+                del self.stream_last_packet_time[reverse_key]
             return
         
         # Try parsing as HTTP response
@@ -801,8 +957,12 @@ class TrafficMonitor:
             # Clear the stream after successful parse
             if connection_key in self.tcp_streams:
                 del self.tcp_streams[connection_key]
+            if connection_key in self.stream_last_packet_time:
+                del self.stream_last_packet_time[connection_key]
             if reverse_key in self.tcp_streams:
                 del self.tcp_streams[reverse_key]
+            if reverse_key in self.stream_last_packet_time:
+                del self.stream_last_packet_time[reverse_key]
             return
     
     def _process_packet_scapy(self, packet):
@@ -859,14 +1019,13 @@ class TrafficMonitor:
                     if packet.haslayer(Raw):
                         data = packet[Raw].load
                         if len(data) > 0:
-                            print(f"📥 Raw data received: {len(data)} bytes from {src_ip}:{src_port} -> {dst_ip}:{dst_port}", file=sys.stderr, flush=True)
                             # Process TCP data (accumulates and parses when complete)
                             self._process_tcp_data(src_ip, src_port, dst_ip, dst_port, data)
                     else:
-                        # TCP packet without Raw layer - might be part of a larger stream
-                        # Store connection info for later reassembly
-                        if connection_key not in self.tcp_streams:
-                            self.tcp_streams[connection_key] = bytearray()
+                        # TCP packet without Raw layer - might be ACK, or payload is 0 bytes
+                        # Still try to track connection for reassembly (some packets might have empty payloads)
+                        # Don't do anything here - just log that we saw the packet
+                        pass
                                 
         except Exception as e:
             # Log errors but continue - not all packets are parseable

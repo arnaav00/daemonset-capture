@@ -412,13 +412,25 @@ class DevWebsiteAPIClient:
                 
                 logger.info(f"  Found {len(applications)} total applications")
                 
-                # Search for matching application name
+                # Log all application names for debugging
+                app_names = [app.get("applicationName") for app in applications]
+                logger.info(f"  Application names in response: {app_names}")
+                
+                # Search for matching application name (exact match, case-sensitive)
                 for app in applications:
-                    if app.get("applicationName") == application_name:
-                        logger.info(f"  ✓ Found matching application: '{application_name}' (appId: {app.get('applicationId')})")
+                    app_name = app.get("applicationName")
+                    logger.info(f"  Comparing: '{app_name}' == '{application_name}'? {app_name == application_name}")
+                    if app_name == application_name:
+                        app_id = app.get("applicationId")
+                        instances = app.get("instances", [])
+                        logger.info(f"  ✓ Found matching application: '{application_name}' (appId: {app_id}, instances: {len(instances)})")
+                        if instances:
+                            instance_id = instances[0].get("instanceId")
+                            logger.info(f"    First instance: instanceId={instance_id}")
                         return app
                 
                 logger.info(f"  ✗ No application found with name '{application_name}'")
+                logger.info(f"  Available names: {app_names}")
                 return None
                 
         except httpx.HTTPStatusError as e:
@@ -445,34 +457,52 @@ class DevWebsiteAPIClient:
         Returns:
             Dictionary with applicationId and instanceId, or None on failure
         """
+        logger.info(f"🚀 create_application() called with service_name='{service_name}'")
         try:
             # First check if application with this name already exists
             logger.info(f"🔍 CHECKING: Looking for existing application with name '{service_name}'")
-            existing_app = self.get_application_by_name(service_name, api_key)
+            logger.info(f"  Calling get_application_by_name('{service_name}')...")
+            
+            try:
+                existing_app = self.get_application_by_name(service_name, api_key)
+                logger.info(f"  get_application_by_name returned: {existing_app is not None}")
+            except Exception as check_error:
+                logger.error(f"  ❌ ERROR in get_application_by_name: {check_error}")
+                logger.error(f"  Exception type: {type(check_error).__name__}")
+                import traceback
+                logger.error(f"  Traceback: {traceback.format_exc()}")
+                existing_app = None
             
             if existing_app:
                 application_id = existing_app.get("applicationId")
-                logger.info(f"✓ Found existing application: appId={application_id}, name='{service_name}'")
+                logger.info(f"✓ REUSING EXISTING APPLICATION: appId={application_id}, name='{service_name}'")
                 
                 # Check if it has instances
                 instances = existing_app.get("instances", [])
+                logger.info(f"  Application has {len(instances)} instance(s)")
+                
                 if instances and len(instances) > 0:
                     # Use first instance
                     instance_id = instances[0].get("instanceId")
-                    logger.info(f"✓ Using existing instance: instanceId={instance_id}")
+                    instance_name = instances[0].get("instanceName", "unnamed")
+                    logger.info(f"✓ REUSING EXISTING INSTANCE: instanceId={instance_id}, name='{instance_name}'")
+                    logger.info(f"✅ Returning existing appId={application_id}, instanceId={instance_id}")
                     return {
                         "applicationId": application_id,
                         "instanceId": instance_id
                     }
                 else:
-                    # Create new instance for existing application
+                    # Create new instance for existing application (shouldn't happen but handle it)
+                    logger.warning(f"⚠️  Existing application has no instances, creating new one")
                     logger.info(f"📦 Creating new instance for existing application")
                     instance_id = self._create_instance_for_app(application_id, service_name, api_key)
                     if instance_id:
+                        logger.info(f"✅ Created instance for existing app: instanceId={instance_id}")
                         return {
                             "applicationId": application_id,
                             "instanceId": instance_id
                         }
+                    logger.error(f"❌ Failed to create instance for existing application")
                     return None
             
             # No existing application, create new one

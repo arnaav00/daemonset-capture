@@ -14,12 +14,40 @@ A DaemonSet that passively captures HTTP/HTTPS API endpoint traffic at the node 
 
 ## Quick Start
 
-### 1. Build Docker Images
+### Pre-Step: Configure Service Mappings
+
+Before deploying, configure your services using the interactive setup script:
 
 ```powershell
-# Build traffic monitor
-docker build -t traffic-monitor:latest .
+.\setup-config.ps1
+```
 
+This script will:
+1. Ask for your API key (bearer token from the dev website)
+2. Ask if you want auto-onboard enabled
+   - **Yes**: Services will be automatically created on the platform when detected
+   - **No**: You'll manually provide appId/instanceId mappings for each service
+3. If manual mode, collect service mappings interactively:
+   - Service name
+   - Application ID (appId)
+   - Instance ID (instanceId)
+   - (Repeat for each service)
+
+The script generates a properly formatted `configmap.yaml` file.
+
+### 1. Build Docker Images
+
+#### For the Traffic Monitor:
+
+```powershell
+docker build --no-cache -t traffic-monitor:latest .
+```
+
+#### For Your Services:
+
+Build and deploy your service Docker images. For the example services provided:
+
+```powershell
 # Build example API (Service 1)
 cd example-app
 docker build -t example-api:latest .
@@ -38,66 +66,88 @@ cd ..
 kubectl apply -f daemonset.yaml
 kubectl apply -f configmap.yaml
 
-# Deploy example API (Service 1)
-kubectl apply -f example-app/deployment.yaml
+# Wait for ConfigMap to be ready
+Start-Sleep 10
 
-# Deploy order service (Service 2)
-kubectl apply -f example-app-2/deployment.yaml
+# Restart pod to pick up configuration
+kubectl delete pod -n kube-system -l app=traffic-monitor
+
 ```
 
 ### 3. Generate Traffic
 
-The traffic monitor will automatically capture traffic from all services. Use the manual calls script to generate traffic for both services:
+The traffic monitor will automatically capture traffic from all services. 
+
+#### For Example Services:
+
+Use the provided script to generate test traffic:
 
 ```powershell
 .\manual-calls.ps1
 ```
 
-This will make API calls to both `example-api` and `order-service`, and the traffic monitor will capture all requests/responses with service identification.
+This makes API calls to both `example-api` and `order-service`, and the traffic monitor captures all requests/responses.
 
-### 4. Configure Service Mappings
+#### For Your Services:
 
-Edit `configmap.yaml` to map your services to APISec platform applications:
+Make HTTP requests to your services (via `kubectl port-forward`, LoadBalancer, or Ingress). The traffic monitor will automatically capture:
+- All HTTP methods (GET, POST, PUT, DELETE, etc.)
+- Request/response headers
+- Request/response bodies
+- Status codes
 
-```yaml
-data:
-  service_config.json: |
-    {
-      "apiKey": "YOUR_API_KEY_HERE",
-      "autoOnboardNewServices": false,
-      "devApiUrl": "https://api.dev.apisecapps.com",
-      "serviceMappings": {
-        "example-api": {
-          "appId": "your-application-id",
-          "instanceId": "your-instance-id"
-        },
-        "order-service": {
-          "appId": "your-application-id",
-          "instanceId": "your-instance-id"
-        }
-      }
-    }
-```
-
-**Important**:
-- Set `apiKey` (top-level, shared across all services)
-- For each service, provide `appId` and `instanceId` from the APISec platform
-- Set `autoOnboardNewServices: true` to automatically create applications for unmapped services
-
-### 5. Deploy Configuration
+### 4. View Captured Endpoints
 
 ```powershell
-kubectl apply -f configmap.yaml
-kubectl delete pod -n kube-system -l app=traffic-monitor  # Restart to pick up config
+.\extract-endpoints.ps1
 ```
 
-### 6. Enable Integration
+This extracts and filters captured endpoints from the DaemonSet, saving them to `captured-endpoints.json`.
 
-Edit `daemonset.yaml` and set:
-```yaml
-- name: ENABLE_DEV_WEBSITE_INTEGRATION
-  value: "true"
+
+Check the DaemonSet logs in another terminal while the DaemonSet is running:
+
+```powershell
+kubectl logs -n kube-system -l app=traffic-monitor
 ```
+
+## Configuration
+
+### ConfigMap Structure
+
+The `configmap.yaml` contains:
+
+```json
+{
+  "apiKey": "YOUR_API_KEY",
+  "autoOnboardNewServices": true/false,
+  "devApiUrl": "https://api.dev.apisecapps.com",
+  "serviceMappings": {
+    "service-name": {
+      "appId": "application-id",
+      "instanceId": "instance-id"
+    }
+  }
+}
+```
+
+
+### Updating Configuration
+
+1. Edit `configmap.yaml` (or run `.\setup-config.ps1` again)
+2. Apply changes:
+   ```powershell
+   kubectl apply -f configmap.yaml
+   ```
+3. Restart DaemonSet pods:
+   ```powershell
+   kubectl delete pod -n kube-system -l app=traffic-monitor
+   ```
+
+## Troubleshooting
+
+- **No traffic captured**: Ensure services are making HTTP requests (not HTTPS), and the DaemonSet pod is running
+- **Endpoints not pushed to platform**: Check that `ENABLE_DEV_WEBSITE_INTEGRATION=true` and API key is valid
 
 Then redeploy:
 ```powershell

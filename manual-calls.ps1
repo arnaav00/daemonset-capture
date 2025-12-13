@@ -28,7 +28,8 @@ function Invoke-ApiCall {
     
     # Explicitly set Host header to service name so traffic monitor can identify the service
     if ($Body) {
-        kubectl run $podName --image=curlimages/curl --restart=Never --rm -i -- curl -s -X $Method $url -H "Host: $Service" -H "Content-Type: application/json" -d $Body 2>&1 | Out-Null
+        # Use single quotes around $Body to prevent PowerShell from splitting on spaces
+        kubectl run $podName --image=curlimages/curl --restart=Never --rm -i -- sh -c "curl -s -X $Method '$url' -H 'Host: $Service' -H 'Content-Type: application/json' -d '$Body'" 2>&1 | Out-Null
     } else {
         kubectl run $podName --image=curlimages/curl --restart=Never --rm -i -- curl -s -X $Method $url -H "Host: $Service" 2>&1 | Out-Null
     }
