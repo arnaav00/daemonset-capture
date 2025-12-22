@@ -9,6 +9,7 @@ import logging
 import sys
 import time
 import base64
+import os
 from typing import Dict, Optional, List, Any
 from datetime import datetime
 from io import BytesIO
@@ -24,6 +25,11 @@ except ImportError:
 logger = logging.getLogger(__name__)
 # Set logger to INFO level to show all API operations
 logger.setLevel(logging.INFO)
+
+# Simple debug logging with print statements (visible in kubectl logs)
+def _debug_log(msg: str):
+    """Print debug message to stderr (visible in kubectl logs)"""
+    print(f"🔍 DEBUG: {msg}", file=sys.stderr, flush=True)
 
 
 class DevWebsiteAPIClient:
@@ -49,6 +55,87 @@ class DevWebsiteAPIClient:
         if not path.startswith('/'):
             path = '/' + path
         return path
+    
+    def _parameterize_path(self, path: str) -> str:
+        """
+        Parameterize an endpoint path by replacing numeric IDs and UUIDs with {id}
+        
+        Examples:
+            /v1/users/1 -> /v1/users/{id}
+            /api/v1/resource/123 -> /api/v1/resource/{id}
+            /v1/users/550e8400-e29b-41d4-a716-446655440000 -> /v1/users/{id}
+            /v1/users/123/orders/456 -> /v1/users/{id}/orders/{id}
+            /v1/users/{id} -> /v1/users/{id} (already parameterized, unchanged)
+        
+        Args:
+            path: The concrete path to parameterize
+            
+        Returns:
+            The parameterized path
+        """
+        import re
+        
+        _debug_log(f"[PARAM_FUNC] ENTRY: path='{path}'")
+        
+        if not path or path == '/':
+            _debug_log(f"[PARAM_FUNC] EXIT (empty/root): '{path}'")
+            return path
+        
+        # Strip query string if present (shouldn't happen, but be safe)
+        original_path = path
+        if '?' in path:
+            path = path.split('?')[0]
+            _debug_log(f"[PARAM_FUNC] Stripped query: '{original_path}' -> '{path}'")
+        
+        # UUID pattern (8-4-4-4-12 hex digits)
+        uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+        # Numeric pattern (pure numbers, potentially large)
+        numeric_pattern = re.compile(r'^\d+$')
+        # Already parameterized patterns (e.g., {id}, {userId}, :id, @id)
+        # Check for {name}, :name, or @name format
+        is_parameterized = lambda s: (
+            (s.startswith('{') and s.endswith('}')) or
+            s.startswith(':') or
+            s.startswith('@')
+        )
+        
+        segments = path.split('/')
+        _debug_log(f"[PARAM_FUNC] Split into {len(segments)} segments: {segments}")
+        parameterized_segments = []
+        changes_made = []
+        
+        for idx, segment in enumerate(segments):
+            if not segment:
+                # Preserve empty segments (leading/trailing slashes)
+                parameterized_segments.append(segment)
+                _debug_log(f"[PARAM_FUNC] Segment {idx}: '' -> preserved (empty)")
+                continue
+            
+            # Skip if already parameterized (e.g., {id}, {userId}, :id)
+            if is_parameterized(segment):
+                parameterized_segments.append(segment)
+                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> preserved (already param)")
+            # Check if segment is a UUID
+            elif uuid_pattern.match(segment):
+                parameterized_segments.append('{id}')
+                changes_made.append(f"segment[{idx}] '{segment}' -> '{{id}}' (UUID)")
+                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> '{{id}}' (UUID)")
+            # Check if segment is purely numeric (likely an ID)
+            elif numeric_pattern.match(segment):
+                parameterized_segments.append('{id}')
+                changes_made.append(f"segment[{idx}] '{segment}' -> '{{id}}' (numeric)")
+                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> '{{id}}' (numeric)")
+            else:
+                # Keep literal segments as-is
+                parameterized_segments.append(segment)
+                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> preserved (literal)")
+        
+        result = '/'.join(parameterized_segments)
+        _debug_log(f"[PARAM_FUNC] RESULT: '{path}' -> '{result}'")
+        if changes_made:
+            logger.info(f"[PARAM_FUNC] Parameterized '{path}' -> '{result}': {', '.join(changes_made)}")
+            _debug_log(f"[PARAM_FUNC] Changes: {', '.join(changes_made)}")
+        return result
     
     def _normalize_method(self, method: str) -> str:
         """Normalize HTTP method for comparison"""
@@ -85,15 +172,24 @@ class DevWebsiteAPIClient:
                 
                 # Parse endpointGroups structure
                 endpoint_groups = data.get("endpointGroups", [])
+                logger.debug(f"[LIST_ENDPOINTS] Found {len(endpoint_groups)} endpoint groups")
                 for group in endpoint_groups:
                     endpoints = group.get("endpoints", [])
-                    for endpoint in endpoints:
+                    for idx, endpoint in enumerate(endpoints):
                         method = self._normalize_method(endpoint.get("method", ""))
-                        path = self._normalize_path(endpoint.get("path", ""))
+                        raw_path_from_platform = endpoint.get("path", "")
+                        path = self._normalize_path(raw_path_from_platform)
+                        # Parameterize paths from platform to match our parameterized paths
+                        parameterized_path = self._parameterize_path(path)
                         endpoint_id = endpoint.get("id", "")
                         
-                        if method and path and endpoint_id:
-                            endpoint_map[f"{method}:{path}"] = endpoint_id
+                        if method and parameterized_path and endpoint_id:
+                            # Use parameterized path as key for matching
+                            endpoint_key = f"{method}:{parameterized_path}"
+                            endpoint_map[endpoint_key] = endpoint_id
+                            # Log first 5 to show parameterization is happening
+                            if idx < 5 and raw_path_from_platform != parameterized_path:
+                                logger.info(f"[LIST_ENDPOINTS] Parameterized platform path: '{raw_path_from_platform}' -> '{parameterized_path}'")
                 
                 # Cache the result
                 self._endpoint_cache[cache_key] = endpoint_map
@@ -168,13 +264,25 @@ class DevWebsiteAPIClient:
             # Log the actual body being sent for debugging
             logger.info(f"  Request body (cleaned): {repr(cleaned_body[:200])} (length: {len(cleaned_body)})")
             
+            # endpoint_path should already be parameterized from push_endpoint()
+            # Just normalize it (ensure it starts with /)
+            final_path = self._normalize_path(endpoint_path)
+            _debug_log(f"[ADD_ENDPOINT] Creating endpoint with path: '{final_path}'")
+            _debug_log(f"[ADD_ENDPOINT] Method: {method.lower()}")
+            logger.info(f"[ADD_ENDPOINT] Creating endpoint with path: {final_path}")
+            logger.info(f"[ADD_ENDPOINT] Method: {method.lower()}")
+            
             payload = [{
                 "method": method.lower(),
-                "endpoint": self._normalize_path(endpoint_path),
+                "endpoint": final_path,
                 "payload": cleaned_body if cleaned_body else ""
             }]
             
+            _debug_log(f"[ADD_ENDPOINT] Payload: {json.dumps(payload)}")
+            _debug_log(f"[ADD_ENDPOINT] POST {url}")
+            _debug_log(f"[ADD_ENDPOINT] Payload: {json.dumps(payload)}")
             logger.info(f"➕ ADD ENDPOINT: POST {url}")
+            logger.info(f"[ADD_ENDPOINT] Payload being sent: {json.dumps(payload, indent=2)}")
             logger.info(f"  Method: {method.upper()}, Path: {endpoint_path}")
             logger.info(f"  Payload: {json.dumps(payload, indent=2)}")
             logger.info(f"  Headers: Authorization=Bearer {api_key[:30]}..., Content-Type=application/json")
@@ -215,6 +323,7 @@ class DevWebsiteAPIClient:
                 if cache_key in self._endpoint_cache:
                     del self._endpoint_cache[cache_key]
                 
+                _debug_log(f"[ADD_ENDPOINT] *** SUCCESS: Created endpoint {method.upper()} {endpoint_path} ***")
                 logger.info(f"✓ Successfully created endpoint: {method.upper()} {endpoint_path}")
                 return True
                 
@@ -333,18 +442,42 @@ class DevWebsiteAPIClient:
         Returns:
             True if successful
         """
+        _debug_log(f"[PUSH_ENDPOINT] ===== ENTRY ===== app_id={app_id}, instance_id={instance_id}")
+        # Test log to verify function is called
+        _debug_log("[PUSH_ENDPOINT] ===== FUNCTION CALLED =====")
+        logger.info(f"[PUSH_ENDPOINT] ENTRY: app_id={app_id}, instance_id={instance_id}")
+        
         if not api_key:
+            _debug_log("[PUSH_ENDPOINT] ERROR: API key is missing")
             logger.error("API key is missing or empty in push_endpoint")
             return False
         
         # Strip whitespace from API key
         api_key = str(api_key).strip()
         if not api_key:
+            _debug_log("[PUSH_ENDPOINT] ERROR: API key is empty after stripping")
             logger.error("API key is empty after stripping whitespace in push_endpoint")
             return False
         
         method = self._normalize_method(endpoint_data.get("method", "GET"))
-        endpoint_path = self._normalize_path(endpoint_data.get("endpoint", "/"))
+        raw_path = endpoint_data.get("endpoint", "/")
+        _debug_log(f"[PUSH_ENDPOINT] Raw path from endpoint_data: '{raw_path}'")
+        _debug_log(f"[PUSH_ENDPOINT] Method: {method}")
+        logger.info(f"[PUSH_ENDPOINT] Raw path from endpoint_data: '{raw_path}'")
+        logger.info(f"[PUSH_ENDPOINT] Method: {method}")
+        
+        endpoint_path = self._normalize_path(raw_path)
+        _debug_log(f"[PUSH_ENDPOINT] After normalization: '{endpoint_path}'")
+        logger.info(f"[PUSH_ENDPOINT] After normalization: '{endpoint_path}'")
+        
+        # Parameterize the path to convert concrete IDs to {id} placeholders
+        _debug_log(f"[PUSH_ENDPOINT] Calling _parameterize_path('{endpoint_path}')")
+        logger.info(f"[PUSH_ENDPOINT] Calling _parameterize_path('{endpoint_path}')")
+        endpoint_path = self._parameterize_path(endpoint_path)
+        _debug_log(f"[PUSH_ENDPOINT] Returned from _parameterize_path: '{endpoint_path}'")
+        _debug_log(f"[PUSH_ENDPOINT] *** FINAL PARAMETERIZATION: '{raw_path}' -> '{endpoint_path}' ***")
+        logger.info(f"[PUSH_ENDPOINT] Returned from _parameterize_path: '{endpoint_path}'")
+        logger.info(f"[PUSH_ENDPOINT] FINAL PARAMETERIZATION: '{raw_path}' -> '{endpoint_path}'")
         
         # Extract request body if available (from request type endpoints)
         request_body = endpoint_data.get("request_body", "")
@@ -363,20 +496,35 @@ class DevWebsiteAPIClient:
             logger.info(f"  ⚠️  No request body found for {method.upper()} {endpoint_path}")
         
         # Check if endpoint exists (with fallback if listing fails)
-        logger.info(f"🔍 PUSH ENDPOINT: Checking if endpoint exists: {method.upper()} {endpoint_path}")
-        existing_endpoints = self.list_endpoints(app_id, instance_id, api_key)
         endpoint_key = f"{method}:{endpoint_path}"
+        _debug_log(f"[PUSH_ENDPOINT] Checking for existing endpoint with key: {endpoint_key}")
+        logger.info(f"[PUSH_ENDPOINT] Checking for existing endpoint with key: {endpoint_key}")
+        logger.info(f"🔍 PUSH ENDPOINT: Checking if endpoint exists: {method.upper()} {endpoint_path}")
+        
+        _debug_log(f"[LIST_ENDPOINTS] Calling list_endpoints for app_id={app_id}, instance_id={instance_id}")
+        existing_endpoints = self.list_endpoints(app_id, instance_id, api_key)
+        _debug_log(f"[LIST_ENDPOINTS] Returned {len(existing_endpoints)} endpoints")
+        logger.info(f"[PUSH_ENDPOINT] Found {len(existing_endpoints)} existing endpoints")
+        if existing_endpoints and len(existing_endpoints) <= 20:
+            _debug_log(f"[PUSH_ENDPOINT] Existing keys: {list(existing_endpoints.keys())}")
+            logger.info(f"[PUSH_ENDPOINT] Existing endpoint keys: {list(existing_endpoints.keys())}")
         
         # If listing succeeded and endpoint exists, update it
         if existing_endpoints and endpoint_key in existing_endpoints:
+            _debug_log(f"[PUSH_ENDPOINT] Endpoint EXISTS, will UPDATE: {endpoint_key}")
+            logger.info(f"[PUSH_ENDPOINT] Endpoint EXISTS, will UPDATE: {endpoint_key}")
             endpoint_id = existing_endpoints[endpoint_key]
             logger.info(f"🔄 Endpoint exists, updating: {endpoint_key} (ID: {endpoint_id})")
             return self.update_endpoint(app_id, instance_id, api_key, endpoint_id, request_body=request_body, query_params=[])
         else:
             # Endpoint doesn't exist or listing failed - try to add
             if not existing_endpoints:
+                _debug_log(f"[PUSH_ENDPOINT] Could not list endpoints, attempting to ADD: {endpoint_key}")
+                logger.info(f"[PUSH_ENDPOINT] Could not list endpoints, attempting to ADD: {endpoint_key}")
                 logger.info(f"⚠️  Could not list endpoints (may be new instance or API issue), attempting to add: {endpoint_key}")
             else:
+                _debug_log(f"[PUSH_ENDPOINT] Endpoint NOT FOUND, will CREATE: {endpoint_key}")
+                logger.info(f"[PUSH_ENDPOINT] Endpoint NOT FOUND in existing endpoints, will CREATE: {endpoint_key}")
                 logger.info(f"✨ New endpoint, creating: {endpoint_key}")
             return self.add_endpoint(app_id, instance_id, api_key, method, endpoint_path, request_body)
     

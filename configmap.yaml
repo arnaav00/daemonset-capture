@@ -7,17 +7,10 @@ data:
   service_config.json: |
     {
         "serviceMappings":  {
-                                "example-api":  {
-                                                    "appId":  "019b1555-7436-74ba-a333-6a375e3377f0",
-                                                    "instanceId":  "019b1555-7597-7460-a872-fccd30342241"
-                                                },
-                                "order-service":  {
-                                                      "appId":  "019b1468-37e7-78f3-b693-a760bb4a5d84",
-                                                      "instanceId":  "019b1468-38e8-7788-be7c-3e7677c75eed"
-                                                  }
+    
                             },
         "devApiUrl":  "https://api.dev.apisecapps.com",
-        "apiKey":  "eyJraWQiOiJmV3o5UTVNeStEUEZBblpUMkFNTlwvNCszVlhHeFRXa3F1VFFyUTEreHM4TT0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0NDc4MzQyOC1iMGUxLTcwYmQtMTAzZi1jNzQzMDY3ZmFkZTMiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfZmtsU1dTU1FnIiwiY29nbml0bzp1c2VybmFtZSI6IjQ0NzgzNDI4LWIwZTEtNzBiZC0xMDNmLWM3NDMwNjdmYWRlMyIsIm9yaWdpbl9qdGkiOiIzOGE3MWExMi04Y2YxLTQ5MGEtYTEwYi00YTk5NmI5Zjk0MmEiLCJjdXN0b206dGVuYW50SWQiOiJlMTU5MjdjOC0xZDBkLTRkZDQtYTgzOS1hZjNmNDQxMTZjNTgiLCJhdWQiOiIxamRqdnM1NnRwOG1uNDFnZjFzamE0azhpdiIsImV2ZW50X2lkIjoiZTFiMmMyNGQtMWVjYy00MjQ4LWExYzMtMzBiN2UxZDVmM2Y0IiwidG9rZW5fdXNlIjoiaWQiLCJhdXRoX3RpbWUiOjE3NjU2NDkzNzcsIm5hbWUiOiJBcm5hYXYiLCJleHAiOjE3NjU2NTI5ODAsImN1c3RvbTpsaWNlbnNlIjoiRU5URVJQUklTRSIsImN1c3RvbTpyb2xlIjoiVVNFUiIsImlhdCI6MTc2NTY0OTM4MCwianRpIjoiYjIxOGY1MTYtNTVhNi00OGJiLWIxNDQtZGIwNDc0OGJhMTUyIiwiZW1haWwiOiJhcm5hYXZAYXBpc2VjLmFpIn0.Px1D97znfS_NK5YP39LTgelZCH60N9_7Q6JE0LWB-GwWo7RQJ1mk5n6lmu5oGuj9ktb8kCRAP7k5-ycaLY3qaRBr-UTGL1DXQr8J3yFAL-1geX6KglsXAvgD_2vgtl2Zv6Nxqj_GeysH8DoKon9t3lxB8fhefDbeyubX3lHF6gWm6K8Ec8ylvMTcYl5rPPwkBPr_WmvZodzpb7Q_5haQZy4GpCd3-pn4dBda7tHTyQje8h01LKits8TFAFEAiw2Ya_sAV-1wYUgS1UUalkpOWxiNAtiXAlGr8u5ih8C4oLw0o365t1Q4lLtMuXKpxbvMpX9vu-CE5XTPyaCziX3pSA",
-        "autoOnboardNewServices":  false
+        "apiKey":  "eyJraWQiOiJmV3o5UTVNeStEUEZBblpUMkFNTlwvNCszVlhHeFRXa3F1VFFyUTEreHM4TT0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0NDc4MzQyOC1iMGUxLTcwYmQtMTAzZi1jNzQzMDY3ZmFkZTMiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfZmtsU1dTU1FnIiwiY29nbml0bzp1c2VybmFtZSI6IjQ0NzgzNDI4LWIwZTEtNzBiZC0xMDNmLWM3NDMwNjdmYWRlMyIsIm9yaWdpbl9qdGkiOiI2NTk4NjIxOC02MTNiLTQ1ZjgtOTI3NC1kYjAyNjg1NzlkZGQiLCJjdXN0b206dGVuYW50SWQiOiJlMTU5MjdjOC0xZDBkLTRkZDQtYTgzOS1hZjNmNDQxMTZjNTgiLCJhdWQiOiIxamRqdnM1NnRwOG1uNDFnZjFzamE0azhpdiIsImV2ZW50X2lkIjoiZWY1YmExZDUtYjcwMy00MGQ0LTllZTUtOWVlMTEwZmM0ZTcxIiwidG9rZW5fdXNlIjoiaWQiLCJhdXRoX3RpbWUiOjE3NjY0MzA3NzQsIm5hbWUiOiJBcm5hYXYiLCJleHAiOjE3NjY0MzQzNzcsImN1c3RvbTpsaWNlbnNlIjoiRU5URVJQUklTRSIsImN1c3RvbTpyb2xlIjoiVVNFUiIsImlhdCI6MTc2NjQzMDc3NywianRpIjoiOGJlZmQ4YTAtZTA1NS00OTdlLTljNTMtYzE0MDlkMzgwYThhIiwiZW1haWwiOiJhcm5hYXZAYXBpc2VjLmFpIn0.rSirLJckrnhqgyPtBudq6U-ScnkiEunFtQtAvTVr9siCpTzsgUPIeUt6LCJYOl-ysxvCq676JBy7GfU7JQDtH2zfTay99ejfRl1Yz_07daY69JL8Q0ufy8ed2-seB942otXEmVaEo0Jz0Q5ydwKWF-A-J88P6W2fsYyI8sehjYoTKIt4XC-wLZNLNIcQIYVO5Lzij8m8OorkIcgDQIMiQnZZEKr_dUB-TcOKY1i2KhkVrMN5MDI6iI_KrJHTd5ynQWCuar41Eyohz4fDBs9geHDZQ9DxdQ5enaL2XGokOZQd8NVepCEGmTNF5jgV5akrcPDc5dfib4g6IJsxPewMig",
+        "autoOnboardNewServices":  true
     }
 

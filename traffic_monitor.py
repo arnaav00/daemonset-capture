@@ -48,6 +48,11 @@ logging.basicConfig(
     force=True  # Force reconfiguration
 )
 
+# Simple debug logging with print statements (visible in kubectl logs)
+def _debug_print(msg: str):
+    """Print debug message to stderr (visible in kubectl logs)"""
+    print(f"🔍 DEBUG: {msg}", file=sys.stderr, flush=True)
+
 # Set API client logger to INFO to see all API operations
 api_logger = logging.getLogger('api_client')
 api_logger.setLevel(logging.INFO)
@@ -290,7 +295,7 @@ class TrafficMonitor:
                           file=sys.stderr, flush=True)
                     return  # No API key configured
                 
-                print(f"  ✓ API key present, proceeding with push", file=sys.stderr, flush=True)
+                print(f"  ✓ API key is present, proceeding with push!", file=sys.stderr, flush=True)
                 
                 # Get service mapping (check again with lock to prevent race condition)
                 mapping = self.service_mapper.get_service_mapping(service_name)
@@ -326,8 +331,9 @@ class TrafficMonitor:
                     # Try to acquire lock - if we get it, proceed with onboarding
                     # If we can't get it immediately, another thread is already onboarding
                     if service_lock.acquire(blocking=False):
-                        print(f"  🔒 Acquired lock for service '{service_name}', proceeding with onboarding", 
+                        print(f"  🔒 Acquired onboarding lock for service '{service_name}', proceeding with onboarding", 
                               file=sys.stderr, flush=True)
+                        _debug_print(f"[TRAFFIC_MONITOR] Acquired lock for service '{service_name}', proceeding with onboarding")
                         try:
                             # Double-check mapping wasn't added while waiting for lock
                             mapping = self.service_mapper.get_service_mapping(service_name)
@@ -368,11 +374,17 @@ class TrafficMonitor:
                       file=sys.stderr, flush=True)
                 return
             
+            # Debug: Log before calling push_endpoint
+            raw_path = endpoint.get('endpoint', '/')
+            method = endpoint.get('method', 'UNKNOWN')
+            _debug_print(f"[TRAFFIC_MONITOR] Calling push_endpoint: method={method}, path={raw_path}, appId={app_id}, instanceId={instance_id}")
             success = self.api_client.push_endpoint(app_id, instance_id, api_key, endpoint)
             if success:
-                print(f"✓ Pushed endpoint to dev website: {endpoint.get('method')} {endpoint.get('endpoint')} "
+                _debug_print(f"[TRAFFIC_MONITOR] SUCCESS: Pushed endpoint {method} {raw_path}")
+                print(f"✓ Done! Pushed endpoint to dev website: {endpoint.get('method')} {endpoint.get('endpoint')} "
                       f"(appId={app_id}, instanceId={instance_id})", file=sys.stderr, flush=True)
             else:
+                _debug_print(f"[TRAFFIC_MONITOR] FAILED: Failed to push endpoint {method} {raw_path}")
                 print(f"✗ Failed to push endpoint: {endpoint.get('method')} {endpoint.get('endpoint')}", 
                       file=sys.stderr, flush=True)
         except Exception as e:
@@ -383,7 +395,7 @@ class TrafficMonitor:
     def _auto_onboard_service(self, service_name: str, endpoint: Dict, api_key: str, service_lock: threading.Lock):
         """Auto-onboard a new service (called in separate thread, holds service_lock)"""
         try:
-            print(f"🚀 STARTING AUTO-ONBOARDING for service '{service_name}'", file=sys.stderr, flush=True)
+            print(f"🚀 STARTING AUTO-ONBOARDING PROCESS for service '{service_name}'", file=sys.stderr, flush=True)
             
             # Double-check mapping wasn't added by another thread while waiting
             # Reload config to get latest state

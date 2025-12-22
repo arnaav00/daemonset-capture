@@ -25,7 +25,6 @@ spec:
       - name: traffic-monitor
         image: traffic-monitor:latest
         imagePullPolicy: Always
-        imagePullPolicy: IfNotPresent
         securityContext:
           privileged: true
           capabilities:
