@@ -423,6 +423,157 @@ class DevWebsiteAPIClient:
             logger.error(f"Error updating endpoint: {str(e)}")
             return False
     
+    def _endpoint_to_bolt_json(self, endpoint_data: Dict[str, Any]) -> str:
+        """
+        Convert endpoint data to Bolt JSON format
+        
+        Args:
+            endpoint_data: Endpoint capture data with method, endpoint, headers, request_body, etc.
+        
+        Returns:
+            JSON string in Bolt format: {"requests": [{"method": "...", "url": "...", "requestHeaders": {...}, "requestBody": "..."}]}
+        """
+        method = endpoint_data.get("method", "GET").upper()
+        path = endpoint_data.get("endpoint", "/")
+        
+        # Ensure path starts with /
+        if not path.startswith('/'):
+            path = '/' + path
+        
+        # Extract headers (convert to dict if needed)
+        headers = endpoint_data.get("headers", {})
+        if not isinstance(headers, dict):
+            headers = {}
+        
+        # Extract request body
+        request_body = endpoint_data.get("request_body", "")
+        if request_body:
+            request_body = str(request_body).strip().rstrip('\n\r')
+        
+        # Build Bolt request object
+        bolt_request = {
+            "method": method,
+            "url": path,  # Bolt parser extracts path from URL, query params can be included here if needed
+            "requestHeaders": headers,
+        }
+        
+        if request_body:
+            bolt_request["requestBody"] = request_body
+        
+        # Wrap in requests array
+        bolt_json = {
+            "requests": [bolt_request]
+        }
+        
+        return json.dumps(bolt_json)
+    
+    def bolt_preview(
+        self,
+        app_id: str,
+        instance_id: str,
+        api_key: str,
+        bolt_json: str
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Call Bolt preview endpoint to match requests against existing endpoints
+        
+        Args:
+            app_id: Application ID
+            instance_id: Instance ID
+            api_key: API key
+            bolt_json: Bolt JSON string with requests array
+        
+        Returns:
+            Preview response dict with endpointSuggestions, or None if failed
+        """
+        try:
+            url = f"{self.base_url}/v1/applications/{app_id}/instances/{instance_id}/bolt/preview"
+            headers = {
+                "Authorization": f"Bearer {api_key}"
+            }
+            
+            # Prepare multipart file upload (bolt expects multipart form data with "file" field)
+            files = {
+                "file": ("bolt.json", BytesIO(bolt_json.encode('utf-8')), "application/json")
+            }
+            
+            _debug_log(f"[BOLT_PREVIEW] POST {url}")
+            logger.info(f"🔍 BOLT PREVIEW: POST {url}")
+            
+            with httpx.Client(timeout=self.timeout) as client:
+                # Remove Content-Type header to let httpx set it for multipart
+                headers.pop("Content-Type", None)
+                response = client.post(url, headers=headers, files=files)
+                response.raise_for_status()
+                
+                result = response.json()
+                _debug_log(f"[BOLT_PREVIEW] Response: {result}")
+                logger.info(f"✓ Bolt preview successful: {result.get('matchedRequests', 0)} matched, {result.get('unmatchedRequests', 0)} unmatched")
+                
+                return result
+                
+        except httpx.HTTPStatusError as e:
+            _debug_log(f"[BOLT_PREVIEW] HTTP error: {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP error in bolt_preview: {e.response.status_code} - {e.response.text}")
+            return None
+        except Exception as e:
+            _debug_log(f"[BOLT_PREVIEW] Error: {str(e)}")
+            logger.error(f"Error in bolt_preview: {str(e)}")
+            return None
+    
+    def bolt_commit(
+        self,
+        app_id: str,
+        instance_id: str,
+        api_key: str,
+        endpoint_selections: List[Dict[str, Any]]
+    ) -> bool:
+        """
+        Call Bolt commit endpoint to apply endpoint updates
+        
+        Args:
+            app_id: Application ID
+            instance_id: Instance ID
+            api_key: API key
+            endpoint_selections: List of endpoint selection dicts with endpointId, include, headers, queryParams, pathParams, requestBodyExample
+        
+        Returns:
+            True if successful
+        """
+        try:
+            url = f"{self.base_url}/v1/applications/{app_id}/instances/{instance_id}/bolt/commit"
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "applyRequestBodies": True,
+                "endpoints": endpoint_selections
+            }
+            
+            _debug_log(f"[BOLT_COMMIT] POST {url} with {len(endpoint_selections)} endpoints")
+            logger.info(f"💾 BOLT COMMIT: POST {url} with {len(endpoint_selections)} endpoints")
+            
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(url, headers=headers, json=payload)
+                response.raise_for_status()
+                
+                result = response.json()
+                _debug_log(f"[BOLT_COMMIT] Response: {result}")
+                logger.info(f"✓ Bolt commit successful: {result.get('endpointsUpdated', 0)} updated, {result.get('endpointsAdded', 0)} added")
+                
+                return True
+                
+        except httpx.HTTPStatusError as e:
+            _debug_log(f"[BOLT_COMMIT] HTTP error: {e.response.status_code} - {e.response.text}")
+            logger.error(f"HTTP error in bolt_commit: {e.response.status_code} - {e.response.text}")
+            return False
+        except Exception as e:
+            _debug_log(f"[BOLT_COMMIT] Error: {str(e)}")
+            logger.error(f"Error in bolt_commit: {str(e)}")
+            return False
+    
     def push_endpoint(
         self,
         app_id: str,
@@ -431,7 +582,8 @@ class DevWebsiteAPIClient:
         endpoint_data: Dict[str, Any]
     ) -> bool:
         """
-        Push an endpoint (create or update based on existence)
+        Push an endpoint using Bolt API (preview + commit)
+        Uses server-side matching instead of client-side parameterization
         
         Args:
             app_id: Application ID
@@ -442,10 +594,8 @@ class DevWebsiteAPIClient:
         Returns:
             True if successful
         """
-        _debug_log(f"[PUSH_ENDPOINT] ===== ENTRY ===== app_id={app_id}, instance_id={instance_id}")
-        # Test log to verify function is called
-        _debug_log("[PUSH_ENDPOINT] ===== FUNCTION CALLED =====")
-        logger.info(f"[PUSH_ENDPOINT] ENTRY: app_id={app_id}, instance_id={instance_id}")
+        _debug_log(f"[PUSH_ENDPOINT] ===== ENTRY (BOLT API) ===== app_id={app_id}, instance_id={instance_id}")
+        logger.info(f"[PUSH_ENDPOINT] ENTRY (BOLT API): app_id={app_id}, instance_id={instance_id}")
         
         if not api_key:
             _debug_log("[PUSH_ENDPOINT] ERROR: API key is missing")
@@ -459,74 +609,93 @@ class DevWebsiteAPIClient:
             logger.error("API key is empty after stripping whitespace in push_endpoint")
             return False
         
-        method = self._normalize_method(endpoint_data.get("method", "GET"))
-        raw_path = endpoint_data.get("endpoint", "/")
-        _debug_log(f"[PUSH_ENDPOINT] Raw path from endpoint_data: '{raw_path}'")
-        _debug_log(f"[PUSH_ENDPOINT] Method: {method}")
-        logger.info(f"[PUSH_ENDPOINT] Raw path from endpoint_data: '{raw_path}'")
-        logger.info(f"[PUSH_ENDPOINT] Method: {method}")
+        method = endpoint_data.get("method", "GET")
+        path = endpoint_data.get("endpoint", "/")
+        _debug_log(f"[PUSH_ENDPOINT] Method: {method}, Path: {path}")
+        logger.info(f"🔍 PUSH ENDPOINT (Bolt): {method.upper()} {path}")
         
-        endpoint_path = self._normalize_path(raw_path)
-        _debug_log(f"[PUSH_ENDPOINT] After normalization: '{endpoint_path}'")
-        logger.info(f"[PUSH_ENDPOINT] After normalization: '{endpoint_path}'")
+        # Step 1: Convert endpoint to Bolt JSON format
+        bolt_json = self._endpoint_to_bolt_json(endpoint_data)
+        _debug_log(f"[PUSH_ENDPOINT] Bolt JSON: {bolt_json}")
+        logger.debug(f"Bolt JSON: {bolt_json}")
         
-        # Parameterize the path to convert concrete IDs to {id} placeholders
-        _debug_log(f"[PUSH_ENDPOINT] Calling _parameterize_path('{endpoint_path}')")
-        logger.info(f"[PUSH_ENDPOINT] Calling _parameterize_path('{endpoint_path}')")
-        endpoint_path = self._parameterize_path(endpoint_path)
-        _debug_log(f"[PUSH_ENDPOINT] Returned from _parameterize_path: '{endpoint_path}'")
-        _debug_log(f"[PUSH_ENDPOINT] *** FINAL PARAMETERIZATION: '{raw_path}' -> '{endpoint_path}' ***")
-        logger.info(f"[PUSH_ENDPOINT] Returned from _parameterize_path: '{endpoint_path}'")
-        logger.info(f"[PUSH_ENDPOINT] FINAL PARAMETERIZATION: '{raw_path}' -> '{endpoint_path}'")
+        # Step 2: Call preview to get matches
+        preview_result = self.bolt_preview(app_id, instance_id, api_key, bolt_json)
+        if not preview_result:
+            _debug_log("[PUSH_ENDPOINT] Preview failed")
+            logger.error("Bolt preview failed")
+            return False
         
-        # Extract request body if available (from request type endpoints)
-        request_body = endpoint_data.get("request_body", "")
+        # Step 3: Extract endpoint suggestions
+        suggestions = preview_result.get("endpointSuggestions", [])
+        unmatched_requests = preview_result.get("unmatched", [])
         
-        # Clean the request body - remove any trailing newlines/whitespace but preserve JSON structure
-        if request_body:
-            request_body = str(request_body).strip()
-            # Only remove trailing newlines, don't strip internal whitespace
-            request_body = request_body.rstrip('\n\r')
-            logger.info(f"  📦 Extracted request body: {repr(request_body[:200])} (length: {len(request_body)})")
+        if not suggestions:
+            _debug_log("[PUSH_ENDPOINT] No endpoint suggestions returned (unmatched)")
+            logger.warning(f"⚠️  No matching endpoint found for {method.upper()} {path} - endpoint doesn't exist yet")
             
-            # Validate it looks like JSON (starts with { or [)
-            if request_body and not (request_body.startswith('{') or request_body.startswith('[')):
-                logger.warning(f"  ⚠️  Request body doesn't look like JSON: {repr(request_body[:50])}")
+            # Fallback: If endpoint doesn't exist, use old add_endpoint logic to create it
+            # IMPORTANT: Parameterize the path first so that future requests with different IDs 
+            # (e.g., /api/v2/orders/3) will match this endpoint via Bolt preview
+            # Bolt's PathTemplate.match() matches concrete paths against parameterized templates
+            logger.info(f"🔄 Falling back to add_endpoint() to create new endpoint (with parameterized path)")
+            method_normalized = self._normalize_method(method)
+            path_normalized = self._normalize_path(path)
+            # Parameterize the path so Bolt can match future requests against it
+            path_parameterized = self._parameterize_path(path_normalized)
+            _debug_log(f"[PUSH_ENDPOINT] Parameterized path for new endpoint: '{path_normalized}' -> '{path_parameterized}'")
+            logger.info(f"📝 Creating endpoint with parameterized path: {path_parameterized}")
+            
+            request_body = endpoint_data.get("request_body", "")
+            if request_body:
+                request_body = str(request_body).strip().rstrip('\n\r')
+            
+            return self.add_endpoint(app_id, instance_id, api_key, method_normalized, path_parameterized, request_body)
+        
+        # Step 4: Build commit payload from first suggestion (we only send one endpoint at a time)
+        suggestion = suggestions[0]
+        endpoint_id = suggestion.get("endpointId")
+        if not endpoint_id:
+            _debug_log("[PUSH_ENDPOINT] No endpointId in suggestion")
+            logger.error("No endpointId in Bolt preview suggestion")
+            return False
+        
+        # Extract headers and request body from original endpoint_data
+        headers = endpoint_data.get("headers", {})
+        request_body = endpoint_data.get("request_body", "")
+        if request_body:
+            request_body = str(request_body).strip().rstrip('\n\r')
+        
+        # Build endpoint selection for commit
+        endpoint_selection = {
+            "endpointId": endpoint_id,
+            "include": True,
+            "pathParams": suggestion.get("pathParams", {}),
+            "queryParams": suggestion.get("queryParams", {}),
+            "headers": headers,  # Use headers from captured endpoint
+        }
+        
+        # Add requestBodyExample only if request body exists
+        if request_body:
+            endpoint_selection["requestBodyExample"] = {
+                "contentType": headers.get("Content-Type", "application/json"),
+                "content": request_body
+            }
+        
+        _debug_log(f"[PUSH_ENDPOINT] Commit payload: {json.dumps(endpoint_selection)}")
+        logger.info(f"💾 Committing endpoint: {endpoint_id}")
+        
+        # Step 5: Commit the endpoint
+        success = self.bolt_commit(app_id, instance_id, api_key, [endpoint_selection])
+        
+        if success:
+            _debug_log(f"[PUSH_ENDPOINT] SUCCESS: {method.upper()} {path} -> {endpoint_id}")
+            logger.info(f"✓ Successfully pushed endpoint via Bolt API: {method.upper()} {path}")
         else:
-            logger.info(f"  ⚠️  No request body found for {method.upper()} {endpoint_path}")
+            _debug_log(f"[PUSH_ENDPOINT] FAILED: Commit failed for {method.upper()} {path}")
+            logger.error(f"❌ Bolt commit failed for {method.upper()} {path}")
         
-        # Check if endpoint exists (with fallback if listing fails)
-        endpoint_key = f"{method}:{endpoint_path}"
-        _debug_log(f"[PUSH_ENDPOINT] Checking for existing endpoint with key: {endpoint_key}")
-        logger.info(f"[PUSH_ENDPOINT] Checking for existing endpoint with key: {endpoint_key}")
-        logger.info(f"🔍 PUSH ENDPOINT: Checking if endpoint exists: {method.upper()} {endpoint_path}")
-        
-        _debug_log(f"[LIST_ENDPOINTS] Calling list_endpoints for app_id={app_id}, instance_id={instance_id}")
-        existing_endpoints = self.list_endpoints(app_id, instance_id, api_key)
-        _debug_log(f"[LIST_ENDPOINTS] Returned {len(existing_endpoints)} endpoints")
-        logger.info(f"[PUSH_ENDPOINT] Found {len(existing_endpoints)} existing endpoints")
-        if existing_endpoints and len(existing_endpoints) <= 20:
-            _debug_log(f"[PUSH_ENDPOINT] Existing keys: {list(existing_endpoints.keys())}")
-            logger.info(f"[PUSH_ENDPOINT] Existing endpoint keys: {list(existing_endpoints.keys())}")
-        
-        # If listing succeeded and endpoint exists, update it
-        if existing_endpoints and endpoint_key in existing_endpoints:
-            _debug_log(f"[PUSH_ENDPOINT] Endpoint EXISTS, will UPDATE: {endpoint_key}")
-            logger.info(f"[PUSH_ENDPOINT] Endpoint EXISTS, will UPDATE: {endpoint_key}")
-            endpoint_id = existing_endpoints[endpoint_key]
-            logger.info(f"🔄 Endpoint exists, updating: {endpoint_key} (ID: {endpoint_id})")
-            return self.update_endpoint(app_id, instance_id, api_key, endpoint_id, request_body=request_body, query_params=[])
-        else:
-            # Endpoint doesn't exist or listing failed - try to add
-            if not existing_endpoints:
-                _debug_log(f"[PUSH_ENDPOINT] Could not list endpoints, attempting to ADD: {endpoint_key}")
-                logger.info(f"[PUSH_ENDPOINT] Could not list endpoints, attempting to ADD: {endpoint_key}")
-                logger.info(f"⚠️  Could not list endpoints (may be new instance or API issue), attempting to add: {endpoint_key}")
-            else:
-                _debug_log(f"[PUSH_ENDPOINT] Endpoint NOT FOUND, will CREATE: {endpoint_key}")
-                logger.info(f"[PUSH_ENDPOINT] Endpoint NOT FOUND in existing endpoints, will CREATE: {endpoint_key}")
-                logger.info(f"✨ New endpoint, creating: {endpoint_key}")
-            return self.add_endpoint(app_id, instance_id, api_key, method, endpoint_path, request_body)
+        return success
     
     
     def get_application_by_name(self, application_name: str, api_key: str) -> Optional[Dict[str, Any]]:
