@@ -59,6 +59,20 @@ docker build -t order-service:latest .
 cd ..
 ```
 
+**Deploy the example services to Kubernetes:**
+
+```powershell
+# Deploy example-api
+kubectl apply -f example-app/deployment.yaml
+
+# Deploy order-service
+kubectl apply -f example-app-2/deployment.yaml
+
+# Verify they're running
+kubectl get deployments
+kubectl get services
+```
+
 ### 2. Deploy to Kubernetes
 
 ```powershell

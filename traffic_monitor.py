@@ -33,7 +33,6 @@ except ImportError:
 try:
     from service_mapper import ServiceMapper
     from api_client import DevWebsiteAPIClient
-    from deduplicator import EndpointDeduplicator
     INTEGRATION_AVAILABLE = True
 except ImportError as e:
     INTEGRATION_AVAILABLE = False
@@ -74,7 +73,6 @@ class TrafficMonitor:
         # Integration components (optional)
         self.service_mapper = None
         self.api_client = None
-        self.deduplicator = None
         self.enable_integration = os.environ.get('ENABLE_DEV_WEBSITE_INTEGRATION', 'false').lower() == 'true'
         
         # Lock for preventing concurrent auto-onboarding of the same service
@@ -126,7 +124,6 @@ class TrafficMonitor:
                     print(f"  ✓ No existing service mappings", file=sys.stderr, flush=True)
                 
                 self.api_client = DevWebsiteAPIClient(base_url=dev_api_url)
-                self.deduplicator = EndpointDeduplicator()
                 print(f"✓ Integration enabled: Dev website URL={dev_api_url}", file=sys.stderr, flush=True)
             except Exception as e:
                 print(f"❌ ERROR: Failed to initialize integration components: {e}", file=sys.stderr, flush=True)
@@ -256,14 +253,14 @@ class TrafficMonitor:
             # Integration not enabled, skip silently
             return
         
-        if not (self.deduplicator and self.service_mapper and self.api_client):
-            print(f"⚠️ WARNING: Integration enabled but components missing: deduplicator={bool(self.deduplicator)}, "
+        if not (self.service_mapper and self.api_client):
+            print(f"⚠️ WARNING: Integration enabled but components missing: "
                   f"service_mapper={bool(self.service_mapper)}, api_client={bool(self.api_client)}", 
                   file=sys.stderr, flush=True)
             return
         
         # Integration is enabled and all components are available
-        if self.enable_integration and self.deduplicator and self.service_mapper and self.api_client:
+        if self.enable_integration and self.service_mapper and self.api_client:
             try:
                 service_name = endpoint.get("service", "unknown")
                 method = endpoint.get("method", "UNKNOWN")
@@ -279,11 +276,6 @@ class TrafficMonitor:
                           file=sys.stderr, flush=True)
                     return  # Skip responses, only push requests
                 
-                # Check de-duplication first
-                if self.deduplicator.is_duplicate(endpoint):
-                    print(f"  ⏭️  Skipping duplicate endpoint", file=sys.stderr, flush=True)
-                    return  # Skip duplicate
-                
                 if service_name == "unknown":
                     print(f"  ⏭️  Skipping unknown service", file=sys.stderr, flush=True)
                     return  # Skip unknown services
@@ -295,9 +287,10 @@ class TrafficMonitor:
                           file=sys.stderr, flush=True)
                     return  # No API key configured
                 
-                print(f"  ✓ API key is present, proceeding with push!", file=sys.stderr, flush=True)
+                print(f"  ✓ API key validated, proceeding with push!", file=sys.stderr, flush=True)
                 
                 # Get service mapping (check again with lock to prevent race condition)
+                print(f"  🔍 Looking up service mapping for: '{service_name}'", file=sys.stderr, flush=True)
                 mapping = self.service_mapper.get_service_mapping(service_name)
                 
                 if mapping:
@@ -363,6 +356,12 @@ class TrafficMonitor:
                         # The endpoint will be processed after onboarding completes
                         print(f"  ⏳ Another thread is onboarding '{service_name}', skipping this endpoint", 
                               file=sys.stderr, flush=True)
+                else:
+                    # No mapping found and auto-onboard is disabled
+                    configured_services = self.service_mapper.list_services()
+                    print(f"  ⚠️  No mapping found for service '{service_name}'", file=sys.stderr, flush=True)
+                    print(f"  📋 Configured services: {configured_services}", file=sys.stderr, flush=True)
+                    print(f"  ⏭️  Auto-onboarding is disabled. Skipping endpoint push.", file=sys.stderr, flush=True)
             except Exception as e:
                 print(f"Error in integration logic: {e}", file=sys.stderr, flush=True)
     
@@ -377,6 +376,7 @@ class TrafficMonitor:
             # Debug: Log before calling push_endpoint
             raw_path = endpoint.get('endpoint', '/')
             method = endpoint.get('method', 'UNKNOWN')
+            print(f"  📤 PUSHING: {method.upper()} {raw_path} to appId={app_id}, instanceId={instance_id}", file=sys.stderr, flush=True)
             _debug_print(f"[TRAFFIC_MONITOR] Calling push_endpoint: method={method}, path={raw_path}, appId={app_id}, instanceId={instance_id}")
             success = self.api_client.push_endpoint(app_id, instance_id, api_key, endpoint)
             if success:

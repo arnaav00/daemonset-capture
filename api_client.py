@@ -56,16 +56,20 @@ class DevWebsiteAPIClient:
             path = '/' + path
         return path
     
+    def _normalize_method(self, method: str) -> str:
+        """Normalize HTTP method for comparison"""
+        return method.lower()
+    
     def _parameterize_path(self, path: str) -> str:
         """
         Parameterize an endpoint path by replacing numeric IDs and UUIDs with {id}
+        Only used when creating new endpoints to ensure they can be matched by Bolt preview
         
         Examples:
-            /v1/users/1 -> /v1/users/{id}
-            /api/v1/resource/123 -> /api/v1/resource/{id}
-            /v1/users/550e8400-e29b-41d4-a716-446655440000 -> /v1/users/{id}
-            /v1/users/123/orders/456 -> /v1/users/{id}/orders/{id}
-            /v1/users/{id} -> /v1/users/{id} (already parameterized, unchanged)
+            /api/v1/users/1 -> /api/v1/users/{id}
+            /api/v1/users/550e8400-e29b-41d4-a716-446655440000 -> /api/v1/users/{id}
+            /api/v1/users/1/orders/2 -> /api/v1/users/{id}/orders/{id}
+            /api/v1/users/{id} -> /api/v1/users/{id} (already parameterized, unchanged)
         
         Args:
             path: The concrete path to parameterize
@@ -75,24 +79,18 @@ class DevWebsiteAPIClient:
         """
         import re
         
-        _debug_log(f"[PARAM_FUNC] ENTRY: path='{path}'")
-        
         if not path or path == '/':
-            _debug_log(f"[PARAM_FUNC] EXIT (empty/root): '{path}'")
             return path
         
-        # Strip query string if present (shouldn't happen, but be safe)
-        original_path = path
+        # Strip query string if present
         if '?' in path:
             path = path.split('?')[0]
-            _debug_log(f"[PARAM_FUNC] Stripped query: '{original_path}' -> '{path}'")
         
         # UUID pattern (8-4-4-4-12 hex digits)
         uuid_pattern = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
-        # Numeric pattern (pure numbers, potentially large)
+        # Numeric pattern (pure numbers)
         numeric_pattern = re.compile(r'^\d+$')
-        # Already parameterized patterns (e.g., {id}, {userId}, :id, @id)
-        # Check for {name}, :name, or @name format
+        # Already parameterized patterns
         is_parameterized = lambda s: (
             (s.startswith('{') and s.endswith('}')) or
             s.startswith(':') or
@@ -100,46 +98,29 @@ class DevWebsiteAPIClient:
         )
         
         segments = path.split('/')
-        _debug_log(f"[PARAM_FUNC] Split into {len(segments)} segments: {segments}")
         parameterized_segments = []
-        changes_made = []
         
-        for idx, segment in enumerate(segments):
+        for segment in segments:
             if not segment:
-                # Preserve empty segments (leading/trailing slashes)
                 parameterized_segments.append(segment)
-                _debug_log(f"[PARAM_FUNC] Segment {idx}: '' -> preserved (empty)")
                 continue
             
-            # Skip if already parameterized (e.g., {id}, {userId}, :id)
+            # Skip if already parameterized
             if is_parameterized(segment):
                 parameterized_segments.append(segment)
-                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> preserved (already param)")
             # Check if segment is a UUID
             elif uuid_pattern.match(segment):
                 parameterized_segments.append('{id}')
-                changes_made.append(f"segment[{idx}] '{segment}' -> '{{id}}' (UUID)")
-                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> '{{id}}' (UUID)")
             # Check if segment is purely numeric (likely an ID)
             elif numeric_pattern.match(segment):
                 parameterized_segments.append('{id}')
-                changes_made.append(f"segment[{idx}] '{segment}' -> '{{id}}' (numeric)")
-                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> '{{id}}' (numeric)")
             else:
                 # Keep literal segments as-is
                 parameterized_segments.append(segment)
-                _debug_log(f"[PARAM_FUNC] Segment {idx}: '{segment}' -> preserved (literal)")
         
         result = '/'.join(parameterized_segments)
-        _debug_log(f"[PARAM_FUNC] RESULT: '{path}' -> '{result}'")
-        if changes_made:
-            logger.info(f"[PARAM_FUNC] Parameterized '{path}' -> '{result}': {', '.join(changes_made)}")
-            _debug_log(f"[PARAM_FUNC] Changes: {', '.join(changes_made)}")
+        logger.info(f"[PARAM_FUNC] Parameterized path for new endpoint: '{path}' -> '{result}'")
         return result
-    
-    def _normalize_method(self, method: str) -> str:
-        """Normalize HTTP method for comparison"""
-        return method.lower()
     
     def list_endpoints(self, app_id: str, instance_id: str, api_key: str) -> Dict[str, str]:
         """
@@ -179,17 +160,12 @@ class DevWebsiteAPIClient:
                         method = self._normalize_method(endpoint.get("method", ""))
                         raw_path_from_platform = endpoint.get("path", "")
                         path = self._normalize_path(raw_path_from_platform)
-                        # Parameterize paths from platform to match our parameterized paths
-                        parameterized_path = self._parameterize_path(path)
                         endpoint_id = endpoint.get("id", "")
                         
-                        if method and parameterized_path and endpoint_id:
-                            # Use parameterized path as key for matching
-                            endpoint_key = f"{method}:{parameterized_path}"
+                        if method and path and endpoint_id:
+                            # Use raw path as key (no client-side parameterization)
+                            endpoint_key = f"{method}:{path}"
                             endpoint_map[endpoint_key] = endpoint_id
-                            # Log first 5 to show parameterization is happening
-                            if idx < 5 and raw_path_from_platform != parameterized_path:
-                                logger.info(f"[LIST_ENDPOINTS] Parameterized platform path: '{raw_path_from_platform}' -> '{parameterized_path}'")
                 
                 # Cache the result
                 self._endpoint_cache[cache_key] = endpoint_map
@@ -582,8 +558,8 @@ class DevWebsiteAPIClient:
         endpoint_data: Dict[str, Any]
     ) -> bool:
         """
-        Push an endpoint using Bolt API (preview + commit)
-        Uses server-side matching instead of client-side parameterization
+        Push an endpoint using Bolt API ONLY (preview + commit)
+        Uses server-side matching - no client-side parameterization or fallbacks
         
         Args:
             app_id: Application ID
@@ -592,7 +568,8 @@ class DevWebsiteAPIClient:
             endpoint_data: Endpoint capture data with method, endpoint, etc.
         
         Returns:
-            True if successful
+            True if successful (endpoint matched and committed via Bolt API),
+            False if no match found or if Bolt API calls failed
         """
         _debug_log(f"[PUSH_ENDPOINT] ===== ENTRY (BOLT API) ===== app_id={app_id}, instance_id={instance_id}")
         logger.info(f"[PUSH_ENDPOINT] ENTRY (BOLT API): app_id={app_id}, instance_id={instance_id}")
@@ -632,34 +609,50 @@ class DevWebsiteAPIClient:
         
         if not suggestions:
             _debug_log("[PUSH_ENDPOINT] No endpoint suggestions returned (unmatched)")
-            logger.warning(f"⚠️  No matching endpoint found for {method.upper()} {path} - endpoint doesn't exist yet")
-            
-            # Fallback: If endpoint doesn't exist, use old add_endpoint logic to create it
-            # IMPORTANT: Parameterize the path first so that future requests with different IDs 
-            # (e.g., /api/v2/orders/3) will match this endpoint via Bolt preview
-            # Bolt's PathTemplate.match() matches concrete paths against parameterized templates
-            logger.info(f"🔄 Falling back to add_endpoint() to create new endpoint (with parameterized path)")
+            logger.warning(f"⚠️  No matching endpoint found for {method.upper()} {path} - endpoint doesn't exist yet. Creating new endpoint with parameterized path.")
+            # No match found via Bolt preview - create new endpoint with parameterized path
+            # This ensures future requests (e.g., /api/v1/users/2, /api/v1/users/3) will match this endpoint
             method_normalized = self._normalize_method(method)
             path_normalized = self._normalize_path(path)
-            # Parameterize the path so Bolt can match future requests against it
+            # Parameterize the path so it can match future concrete requests
             path_parameterized = self._parameterize_path(path_normalized)
-            _debug_log(f"[PUSH_ENDPOINT] Parameterized path for new endpoint: '{path_normalized}' -> '{path_parameterized}'")
-            logger.info(f"📝 Creating endpoint with parameterized path: {path_parameterized}")
-            
             request_body = endpoint_data.get("request_body", "")
             if request_body:
                 request_body = str(request_body).strip().rstrip('\n\r')
             
+            logger.info(f"📝 Creating new endpoint with parameterized path: {method.upper()} {path_parameterized}")
+            _debug_log(f"[PUSH_ENDPOINT] Parameterized: '{path_normalized}' -> '{path_parameterized}'")
             return self.add_endpoint(app_id, instance_id, api_key, method_normalized, path_parameterized, request_body)
         
-        # Step 4: Build commit payload from first suggestion (we only send one endpoint at a time)
+        # Step 4: Check if matched endpoint needs parameterization
         suggestion = suggestions[0]
         endpoint_id = suggestion.get("endpointId")
+        matched_path = suggestion.get("path", path)
+        
         if not endpoint_id:
             _debug_log("[PUSH_ENDPOINT] No endpointId in suggestion")
             logger.error("No endpointId in Bolt preview suggestion")
             return False
         
+        # Check if matched path is raw and should be parameterized
+        # Bolt can only match concrete paths to parameterized templates IF the template exists
+        # If endpoint exists with raw path (e.g., /api/v1/users/2), Bolt matches it exactly
+        # We need to create parameterized version (e.g., /api/v1/users/{id}) so Bolt can match future requests
+        path_parameterized = self._parameterize_path(matched_path)
+        if path_parameterized != matched_path:
+            # Matched endpoint has raw path, but should have parameterized template
+            # Create parameterized version so Bolt can match future concrete paths automatically
+            logger.info(f"📝 Matched endpoint has raw path '{matched_path}' - creating parameterized template '{path_parameterized}' for Bolt matching")
+            method_normalized = self._normalize_method(method)
+            headers = endpoint_data.get("headers", {})
+            request_body = endpoint_data.get("request_body", "")
+            if request_body:
+                request_body = str(request_body).strip().rstrip('\n\r')
+            
+            # Create new endpoint with parameterized path (this becomes the template Bolt will match against)
+            return self.add_endpoint(app_id, instance_id, api_key, method_normalized, path_parameterized, request_body)
+        
+        # Matched endpoint is already parameterized (or doesn't need parameterization) - proceed with Bolt commit
         # Extract headers and request body from original endpoint_data
         headers = endpoint_data.get("headers", {})
         request_body = endpoint_data.get("request_body", "")

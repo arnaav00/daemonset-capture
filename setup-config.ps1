@@ -8,7 +8,6 @@ Write-Host ""
 
 # Get API Key
 Write-Host "1. Enter your API Key:" -ForegroundColor Yellow
-Write-Host "   (The bearer token from the dev website)" -ForegroundColor Gray
 $apiKey = Read-Host "   API Key"
 
 if ([string]::IsNullOrWhiteSpace($apiKey)) {
@@ -18,57 +17,47 @@ if ([string]::IsNullOrWhiteSpace($apiKey)) {
 
 Write-Host ""
 
-# Get auto-onboard preference
-Write-Host "2. Do you want to auto-onboard new services?" -ForegroundColor Yellow
-Write-Host "   (If yes, services will be automatically created on the platform)" -ForegroundColor Gray
-Write-Host "   (If no, you'll need to provide manual mappings for each service)" -ForegroundColor Gray
-$autoOnboardResponse = Read-Host "   Enter 'y' for yes, 'n' for no"
-
+# Auto-onboarding is disabled for production deployments
+# Services must be manually mapped to existing APISec applications
 $autoOnboardNewServices = $false
-if ($autoOnboardResponse -eq 'y' -or $autoOnboardResponse -eq 'Y' -or $autoOnboardResponse -eq 'yes' -or $autoOnboardResponse -eq 'YES') {
-    $autoOnboardNewServices = $true
-    Write-Host "   OK: Auto-onboard enabled" -ForegroundColor Green
-    $serviceMappings = @{}
-} else {
-    $autoOnboardNewServices = $false
-    Write-Host "   OK: Manual mappings mode" -ForegroundColor Green
-    $serviceMappings = @{}
+Write-Host "2. Service Mapping Configuration" -ForegroundColor Yellow
+Write-Host ""
+
+$serviceMappings = @{}
+
+Write-Host "   Enter service mappings:" -ForegroundColor Yellow
+Write-Host "   (You can add multiple services. Enter empty service name to finish)" -ForegroundColor Gray
+Write-Host ""
+
+$serviceIndex = 1
+while ($true) {
+    Write-Host "   Service #$serviceIndex" -ForegroundColor Cyan
+    $serviceName = Read-Host "   Service name (press Enter to finish)"
     
-    Write-Host ""
-    Write-Host "3. Enter service mappings:" -ForegroundColor Yellow
-    Write-Host "   (You can add multiple services. Enter empty service name to finish)" -ForegroundColor Gray
-    Write-Host ""
-    
-    $serviceIndex = 1
-    while ($true) {
-        Write-Host "   Service #$serviceIndex" -ForegroundColor Cyan
-        $serviceName = Read-Host "   Service name (press Enter to finish)"
-        
-        if ([string]::IsNullOrWhiteSpace($serviceName)) {
-            break
-        }
-        
-        $appId = Read-Host "   Application ID (appId)"
-        if ([string]::IsNullOrWhiteSpace($appId)) {
-            Write-Host "   WARNING: Skipping service (appId required)" -ForegroundColor Yellow
-            continue
-        }
-        
-        $instanceId = Read-Host "   Instance ID (instanceId)"
-        if ([string]::IsNullOrWhiteSpace($instanceId)) {
-            Write-Host "   WARNING: Skipping service (instanceId required)" -ForegroundColor Yellow
-            continue
-        }
-        
-        $serviceMappings[$serviceName] = @{
-            appId = $appId
-            instanceId = $instanceId
-        }
-        
-        Write-Host "   OK: Added mapping for '$serviceName'" -ForegroundColor Green
-        Write-Host ""
-        $serviceIndex++
+    if ([string]::IsNullOrWhiteSpace($serviceName)) {
+        break
     }
+    
+    $appId = Read-Host "   Application ID (appId)"
+    if ([string]::IsNullOrWhiteSpace($appId)) {
+        Write-Host "   WARNING: Skipping service (appId required)" -ForegroundColor Yellow
+        continue
+    }
+    
+    $instanceId = Read-Host "   Instance ID (instanceId)"
+    if ([string]::IsNullOrWhiteSpace($instanceId)) {
+        Write-Host "   WARNING: Skipping service (instanceId required)" -ForegroundColor Yellow
+        continue
+    }
+    
+    $serviceMappings[$serviceName] = @{
+        appId = $appId
+        instanceId = $instanceId
+    }
+    
+    Write-Host "   OK: Added mapping for '$serviceName'" -ForegroundColor Green
+    Write-Host ""
+    $serviceIndex++
 }
 
 Write-Host ""
@@ -77,7 +66,7 @@ Write-Host "  Configuration Summary" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "API Key: $($apiKey.Substring(0, [Math]::Min(30, $apiKey.Length)))..." -ForegroundColor White
-Write-Host "Auto-onboard new services: $autoOnboardNewServices" -ForegroundColor White
+Write-Host "Auto-onboard new services: Disabled (manual mapping only)" -ForegroundColor White
 Write-Host "Service mappings: $($serviceMappings.Count) service(s)" -ForegroundColor White
 
 if ($serviceMappings.Count -gt 0) {

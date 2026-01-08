@@ -7,10 +7,10 @@ data:
   service_config.json: |
     {
         "serviceMappings":  {
-    
+                                
                             },
         "devApiUrl":  "https://api.dev.apisecapps.com",
         "apiKey":  "",
-        "autoOnboardNewServices":  true
+        "autoOnboardNewServices":  false
     }
 

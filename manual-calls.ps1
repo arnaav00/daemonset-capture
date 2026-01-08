@@ -51,8 +51,14 @@ Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/users/2"
 # Create user
 Invoke-ApiCall -Service "example-api" -Method "POST" -Path "/api/v1/users" -Body '{\"name\":\"Test User\",\"email\":\"test@example.com\"}'
 
-# Update user
-Invoke-ApiCall -Service "example-api" -Method "PUT" -Path "/api/v1/users/1" -Body '{\"name\":\"Updated Name\"}'
+# Update user (modified to use fullName field to test updates)
+Invoke-ApiCall -Service "example-api" -Method "PUT" -Path "/api/v1/users/1" -Body '{\"fullName\":\"Alice Updated\",\"email\":\"alice.updated@example.com\"}'
+
+# Patch user (new endpoint - partial update)
+Invoke-ApiCall -Service "example-api" -Method "PATCH" -Path "/api/v1/users/2" -Body '{\"name\":\"Bob Smith\",\"status\":\"active\"}'
+
+# Get user orders (new endpoint)
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/users/1/orders"
 
 # Products
 Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/products"

@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy all Python scripts
 # Use COPY with explicit files to avoid cache issues
-COPY traffic_monitor.py service_mapper.py api_client.py deduplicator.py ./
+COPY traffic_monitor.py service_mapper.py api_client.py ./
 
 # Make script executable
 RUN chmod +x traffic_monitor.py
