@@ -8,9 +8,9 @@ A DaemonSet that passively captures HTTP/HTTPS API endpoint traffic at the node 
 - **Zero Latency**: Non-intrusive packet capture without affecting application performance
 - **Endpoint Discovery**: Automatically discovers and captures all API endpoints (GET, POST, PUT, DELETE, etc.)
 - **Multi-Service Support**: Captures traffic from multiple services simultaneously and identifies the source service
-- **Automatic Push to APISec Platform**: Pushes captured endpoints directly to the dev website
-- **Auto-Onboarding**: Automatically creates applications for new services (optional)
-- **Smart Endpoint Management**: Checks if endpoints exist and updates or creates accordingly
+- **Automatic Push to APISec Platform**: Pushes captured endpoints directly 
+- **Server-Side Deduplication**: Uses APISec Bolt API for matching and deduplication
+
 
 ## Quick Start
 
@@ -23,17 +23,16 @@ Before deploying, configure your services using the interactive setup script:
 ```
 
 This script will:
-1. Ask for your API key (bearer token from the dev website)
-2. Ask if you want auto-onboard enabled
-   - **Yes**: Services will be automatically created on the platform when detected
-   - **No**: You'll manually provide appId/instanceId mappings for each service
-3. If manual mode, collect service mappings interactively:
-   - Service name
-   - Application ID (appId)
-   - Instance ID (instanceId)
-   - (Repeat for each service)
+1. Ask for your API key (bearer token from the APISec platform)
+2. Collect service mappings interactively for each service:
+   - Service name (must match Kubernetes service name)
+   - Application ID (appId) from APISec platform
+   - Instance ID (instanceId) from APISec platform
+   - (Repeat for each service you want to monitor)
 
 The script generates a properly formatted `configmap.yaml` file.
+
+**Note**: Auto-onboarding is disabled. You must manually map each Kubernetes service to its corresponding APISec application/instance.
 
 ### 1. Build Docker Images
 
@@ -85,12 +84,13 @@ Start-Sleep 10
 
 # Restart pod to pick up configuration
 kubectl delete pod -n kube-system -l app=traffic-monitor
-
 ```
+
+**Note**: The DaemonSet runs in the `kube-system` namespace. In Docker Desktop, switch to the `kube-system` namespace to view the pods.
 
 ### 3. Generate Traffic
 
-The traffic monitor will automatically capture traffic from all services. 
+The traffic monitor will automatically capture traffic from all services configured in the service mappings.
 
 #### For Example Services:
 
@@ -105,12 +105,26 @@ This makes API calls to both `example-api` and `order-service`, and the traffic 
 #### For Your Services:
 
 Make HTTP requests to your services (via `kubectl port-forward`, LoadBalancer, or Ingress). The traffic monitor will automatically capture:
-- All HTTP methods (GET, POST, PUT, DELETE, etc.)
+- All HTTP methods (GET, POST, PUT, DELETE, PATCH, etc.)
 - Request/response headers
 - Request/response bodies
 - Status codes
 
 ### 4. View Captured Endpoints
+
+Check the DaemonSet logs to see endpoint capture and push status:
+
+```powershell
+kubectl logs -n kube-system -l app=traffic-monitor -f
+```
+
+You should see logs indicating:
+- Endpoint captures
+- Bolt Preview API calls
+- Endpoint matches/creates
+- Path parameterization for new endpoints
+
+Extract captured endpoints to a file:
 
 ```powershell
 .\extract-endpoints.ps1
@@ -118,12 +132,13 @@ Make HTTP requests to your services (via `kubectl port-forward`, LoadBalancer, o
 
 This extracts and filters captured endpoints from the DaemonSet, saving them to `captured-endpoints.json`.
 
+### 5. Verify on APISec Platform
 
-Check the DaemonSet logs in another terminal while the DaemonSet is running:
-
-```powershell
-kubectl logs -n kube-system -l app=traffic-monitor
-```
+1. Log in to the APISec platform
+2. Navigate to your applications
+3. Check that endpoints are appearing:
+   - Existing endpoints will be updated with new parameters/headers
+   - New endpoints will be created with parameterized paths (e.g., `/api/v1/users/{id}`)
 
 ## Configuration
 
@@ -134,7 +149,7 @@ The `configmap.yaml` contains:
 ```json
 {
   "apiKey": "YOUR_API_KEY",
-  "autoOnboardNewServices": true/false,
+  "autoOnboardNewServices": false,
   "devApiUrl": "https://api.dev.apisecapps.com",
   "serviceMappings": {
     "service-name": {
@@ -160,18 +175,34 @@ The `configmap.yaml` contains:
 
 ## Troubleshooting
 
-- **No traffic captured**: Ensure services are making HTTP requests (not HTTPS), and the DaemonSet pod is running
-- **Endpoints not pushed to platform**: Check that `ENABLE_DEV_WEBSITE_INTEGRATION=true` and API key is valid
+### No traffic captured
+- Ensure services are making HTTP requests (HTTPS is captured but may need TLS inspection)
+- Verify the DaemonSet pod is running: `kubectl get pods -n kube-system -l app=traffic-monitor`
+- Check logs: `kubectl logs -n kube-system -l app=traffic-monitor`
 
-Then redeploy:
+### Endpoints not pushed to platform
+- Verify `ENABLE_DEV_WEBSITE_INTEGRATION=true` in `daemonset.yaml` (already set)
+- Check that API key is valid and not expired
+- Ensure service mappings are correct (service name matches Kubernetes service name)
+- Check logs for error messages: `kubectl logs -n kube-system -l app=traffic-monitor`
+
+### Service not found in mappings
+- Verify the service name in `configmap.yaml` exactly matches the Kubernetes service name
+- Ensure the service is making HTTP traffic that can be captured
+- Check logs for "service not found" or "no mapping" messages
+
+### Endpoints showing as raw paths instead of parameterized
+- This is expected for new endpoints: they are parameterized when created
+- Bolt Preview matches concrete paths (e.g., `/api/v1/users/1`) against parameterized templates (e.g., `/api/v1/users/{id}`)
+- If you see raw paths on the platform, they are likely new endpoints that haven't been parameterized yet
+
+### Rebuilding after code changes
+
+If you modify the Python code, rebuild the image:
+
 ```powershell
+docker build --no-cache -t traffic-monitor:latest .
 kubectl apply -f daemonset.yaml
+kubectl delete pod -n kube-system -l app=traffic-monitor
 ```
-
-## Features
-
-- **Endpoint Tracking**: Automatically checks if endpoints exist before creating/updating
-- **Auto-Onboarding**: Creates applications and instances for new services automatically
-- **De-duplication**: Prevents duplicate endpoint pushes
-- **Service Mapping**: Maps Kubernetes services to APISec platform applications
 
