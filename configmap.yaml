@@ -7,10 +7,17 @@ data:
   service_config.json: |
     {
         "serviceMappings":  {
-                                
+                                "order-service":  {
+                                                      "appId":  "019bac4d-bd8b-72fa-b609-db3b1bdc8533",
+                                                      "instanceId":  "019bac4d-bea7-795e-94e3-1feb5d04b535"
+                                                  },
+                                "example-api":  {
+                                                    "appId":  "019bac4d-b248-7e4a-9d2e-753e0253670c",
+                                                    "instanceId":  "019bac4d-b393-7dad-b3be-01314f2a3413"
+                                                }
                             },
         "devApiUrl":  "https://api.dev.apisecapps.com",
-        "apiKey":  "",
+        "apiKey":  "eyJraWQiOiJmV3o5UTVNeStEUEZBblpUMkFNTlwvNCszVlhHeFRXa3F1VFFyUTEreHM4TT0iLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiI0NDc4MzQyOC1iMGUxLTcwYmQtMTAzZi1jNzQzMDY3ZmFkZTMiLCJlbWFpbF92ZXJpZmllZCI6dHJ1ZSwiaXNzIjoiaHR0cHM6XC9cL2NvZ25pdG8taWRwLnVzLWVhc3QtMS5hbWF6b25hd3MuY29tXC91cy1lYXN0LTFfZmtsU1dTU1FnIiwiY29nbml0bzp1c2VybmFtZSI6IjQ0NzgzNDI4LWIwZTEtNzBiZC0xMDNmLWM3NDMwNjdmYWRlMyIsIm9yaWdpbl9qdGkiOiI1OWM0NThjYi1lODYxLTQ3ODgtYjQ0OC02YjkwNjk5OTczNDIiLCJjdXN0b206dGVuYW50SWQiOiJlMTU5MjdjOC0xZDBkLTRkZDQtYTgzOS1hZjNmNDQxMTZjNTgiLCJhdWQiOiIxamRqdnM1NnRwOG1uNDFnZjFzamE0azhpdiIsImV2ZW50X2lkIjoiMDQwNjE1NjYtYWYwMy00ZGFjLWFjYzMtMzk1NmVmNzc0NTQ3IiwidG9rZW5fdXNlIjoiaWQiLCJhdXRoX3RpbWUiOjE3NjgxMTk3MzcsIm5hbWUiOiJBcm5hYXYiLCJleHAiOjE3NjgxMjUyOTksImN1c3RvbTpsaWNlbnNlIjoiRU5URVJQUklTRSIsImN1c3RvbTpyb2xlIjoiVVNFUiIsImlhdCI6MTc2ODEyMTcwMCwianRpIjoiZjFjYzIxMGYtMWNiYy00ZjRiLWExZTEtNTI1MDNiN2U4M2NjIiwiZW1haWwiOiJhcm5hYXZAYXBpc2VjLmFpIn0.n4kgBmOPcGaegGHA9mzHLI0vKCAMzeoYDkeW2XhfFCDCB4LIWcNVFs6Rvkiy3mKM5PFNIXmS9oB_rfYNtHiKkhBgpIPdnvLc0JlpQjsdbm6nhJx-NXJKC4klwKn8mu8iWFkS_cbV35EwS8T1lCn23TGhfjYnGohsOKxdSLxHoDQJy-uhuk7bCPNhcX7bHHkjPLCWUgvFGvTxm89DUq7uw_mmwKANKj7BFYVJYLIzPJWHNuE5JlbzM74EIFoNdZ0gulxNSrZN7XbSh1HyNDWRvZFmzdizA8ZVRX4MBqtuqsVu0n9j8E2ip8mF-iLYLOr2rMUlS77WLee_jSpMqQd5Gw",
         "autoOnboardNewServices":  false
     }
 

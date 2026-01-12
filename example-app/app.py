@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 from flask import Flask, jsonify, request, abort
 from datetime import datetime
+import requests
+import os
 
 app = Flask(__name__)
 
@@ -121,6 +123,49 @@ def get_user_orders(user_id):
         abort(404, description="User not found")
     user_orders = [order for order in orders_db.values() if order["user_id"] == user_id]
     return jsonify({"user_id": user_id, "orders": user_orders, "count": len(user_orders)})
+
+# New endpoint 3: Get order details from order-service (inter-service call)
+@app.route('/api/v1/orders/<int:order_id>', methods=['GET'])
+def get_order_details(order_id):
+    """Fetch order details from order-service (inter-service communication)"""
+    try:
+        # Call order-service using Kubernetes service DNS
+        order_service_url = os.environ.get('ORDER_SERVICE_URL', 'http://order-service')
+        response = requests.get(f"{order_service_url}/api/v2/orders/{order_id}", timeout=5)
+        
+        if response.status_code == 200:
+            order_data = response.json()
+            return jsonify({
+                "source": "example-api",
+                "order": order_data,
+                "message": "Fetched from order-service via inter-service call"
+            })
+        elif response.status_code == 404:
+            abort(404, description="Order not found in order-service")
+        else:
+            abort(502, description=f"Error calling order-service: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        abort(502, description=f"Failed to connect to order-service: {str(e)}")
+
+# New endpoint 4: Get inventory summary (calls order-service)
+@app.route('/api/v1/inventory/summary', methods=['GET'])
+def get_inventory_summary():
+    """Fetch inventory summary from order-service (inter-service communication)"""
+    try:
+        order_service_url = os.environ.get('ORDER_SERVICE_URL', 'http://order-service')
+        response = requests.get(f"{order_service_url}/api/v2/inventory", timeout=5)
+        
+        if response.status_code == 200:
+            inventory_data = response.json()
+            return jsonify({
+                "source": "example-api",
+                "inventory": inventory_data,
+                "message": "Fetched from order-service via inter-service call"
+            })
+        else:
+            abort(502, description=f"Error calling order-service: {response.status_code}")
+    except requests.exceptions.RequestException as e:
+        abort(502, description=f"Failed to connect to order-service: {str(e)}")
 
 if __name__ == '__main__':
     import os

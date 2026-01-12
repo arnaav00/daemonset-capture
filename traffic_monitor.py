@@ -675,9 +675,12 @@ class TrafficMonitor:
             
             host = headers.get('Host', dst_ip)
             
-            # Log Host header for debugging
+            # Log Host header for debugging (especially for inter-service calls)
             if host != dst_ip:
                 print(f"📋 Host header: '{host}' (dst_ip={dst_ip})", file=sys.stderr, flush=True)
+                # Check if this looks like inter-service traffic (service DNS name)
+                if '.' in host and ('svc.cluster.local' in host or host.count('.') >= 2):
+                    print(f"🌐 INTER-SERVICE TRAFFIC detected: Host='{host}'", file=sys.stderr, flush=True)
             else:
                 print(f"⚠️  No Host header found, using dst_ip: {dst_ip}", file=sys.stderr, flush=True)
             
@@ -686,6 +689,8 @@ class TrafficMonitor:
             
             # Extract service name from host
             service_name = self._extract_service_name(host, dst_ip)
+            if service_name != "unknown":
+                print(f"✓ Service identified: '{service_name}' from host='{host}'", file=sys.stderr, flush=True)
             
             endpoint_data = {
                 "id": str(uuid.uuid4()),

@@ -105,9 +105,29 @@ Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/reports/sal
 Invoke-ApiCall -Service "order-service" -Method "DELETE" -Path "/api/v2/orders/3"
 
 Write-Host ""
+Write-Host "=== Making Inter-Service API Calls ===" -ForegroundColor Yellow
+Write-Host "These calls trigger communication between services" -ForegroundColor Gray
+Write-Host ""
+
+# Inter-service: example-api calling order-service
+Write-Host "[INTER-SERVICE] example-api -> order-service" -ForegroundColor Cyan
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/orders/1"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/orders/2"
+Invoke-ApiCall -Service "example-api" -Method "GET" -Path "/api/v1/inventory/summary"
+
+# Inter-service: order-service calling example-api
+Write-Host "[INTER-SERVICE] order-service -> example-api" -ForegroundColor Cyan
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders/1/user-details"
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders/2/user-details"
+Invoke-ApiCall -Service "order-service" -Method "GET" -Path "/api/v2/orders/1/product-info"
+
+Write-Host ""
 Write-Host "=== All API calls completed ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "To view captured endpoints:" -ForegroundColor Yellow
 Write-Host "  .\extract-endpoints.ps1" -ForegroundColor White
+Write-Host ""
+Write-Host "To view logs and verify inter-service traffic capture:" -ForegroundColor Yellow
+Write-Host "  kubectl logs -n kube-system -l app=traffic-monitor -f" -ForegroundColor White
 Write-Host ""
 
