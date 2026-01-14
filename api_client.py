@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-API Client for pushing endpoints to dev website
+API Client for pushing endpoints to APISec platform
 """
 
 import json
@@ -33,9 +33,9 @@ def _debug_log(msg: str):
 
 
 class DevWebsiteAPIClient:
-    """Client for pushing endpoint data to the dev website"""
+    """Client for pushing endpoint data to the APISec platform"""
     
-    def __init__(self, base_url: str = "https://api.dev.apisecapps.com", timeout: int = 30):
+    def __init__(self, base_url: str = "https://api.apisecapps.com", timeout: int = 30):
         self.base_url = base_url.rstrip('/')
         self.timeout = timeout
         # Cache for endpoint listings per instance

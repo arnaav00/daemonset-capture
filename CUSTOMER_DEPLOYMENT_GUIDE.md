@@ -87,37 +87,58 @@ docker build --no-cache -t traffic-monitor:latest .
 
 **Note**: If you're using a private registry, tag and push the image:
 
-```powershell
+```bash
 docker tag traffic-monitor:latest your-registry.io/traffic-monitor:latest
 docker push your-registry.io/traffic-monitor:latest
 ```
 
-### Step 2: Configure Service Mappings
+### Step 2: Create Applications in APISec Platform (for New Services)
+
+If you're onboarding a new service that doesn't have an application yet in the APISec platform:
+
+1. Log in to the APISec platform
+2. Create a new application (or use an existing one)
+3. Upload the `EmptySpec.yaml` file provided in the directory:
+   - Click on 'Add Application' in your Applications tab
+   - Upload `EmptySpec.yaml` as the OpenAPI specification with your application name
+   - This creates an empty application ready to receive endpoints
+4. Note the `applicationId` and `instanceId` from the URL:
+   - URL format: `https://apisec.ai/application/<applicationId>/instance/<instanceId>`
+
+**Note**: If your service already has an application in the platform, skip this step and proceed to Step 3.
+
+### Step 3: Configure Service Mappings
 
 Run the interactive configuration script:
 
+**On Windows (PowerShell):**
 ```powershell
 .\setup-config.ps1
 ```
 
+**On Linux/macOS (Bash):**
+```bash
+chmod +x setup-config.sh
+./setup-config.sh
+```
+
 Please input your:
 
-1. **API Key**: Enter your APISec platform bearer token
+1. **API Key**: Enter your APISec platform token
 2. **Service mappings**: For each service you want to monitor:
    - Service name (as it appears in Kubernetes)
    - Application ID (from APISec platform)
    - Instance ID (from APISec platform)
 
-
 **Important**: The service name must match exactly (case-sensitive) with your Kubernetes Service name. You can verify service names with:
 
-```powershell
+```bash
 kubectl get services --all-namespaces
 ```
 
 The script generates a `configmap.yaml` file with your configuration.
 
-### Step 3: Deploy to Kubernetes
+### Step 4: Deploy to Kubernetes
 
 Deploy the ConfigMap and DaemonSet:
 
@@ -132,11 +153,11 @@ kubectl apply -f daemonset.yaml
 kubectl get pods -n kube-system -l app=traffic-monitor -w
 ```
 
-### Step 4: Verify Deployment
+### Step 5: Verify Deployment
 
 Check that the DaemonSet is running:
 
-```powershell
+```bash
 # Check DaemonSet status
 kubectl get daemonset -n kube-system traffic-monitor
 
@@ -166,7 +187,7 @@ data:
     {
       "apiKey": "your-api-key-here",
       "autoOnboardNewServices": false,
-      "devApiUrl": "https://api.dev.apisecapps.com",
+      "apisecUrl": "https://api.apisecapps.com",
       "serviceMappings": {
         "service-name-1": {
           "appId": "application-id-1",
@@ -197,7 +218,7 @@ Look for messages like:
 
 ```
 ✓ Successfully parsed HTTP REQUEST: GET /api/v1/users (service=payment-service)
-✓ Done! Pushed endpoint to dev website: GET /api/v1/users
+✓ Done! Pushed endpoint to APISec platform: GET /api/v1/users
 ```
 
 ### Verify Endpoints in APISec Platform
@@ -210,7 +231,7 @@ Look for messages like:
 
 Make a test request to one of your mapped services:
 
-```powershell
+```bash
 # If your service is exposed via port-forward
 kubectl port-forward svc/your-service-name 8080:80
 
@@ -226,7 +247,7 @@ Then check the logs to see if it was captured.
 
 ### Viewing Logs
 
-```powershell
+```bash
 # View all logs
 kubectl logs -n kube-system -l app=traffic-monitor
 
@@ -265,9 +286,9 @@ kubectl logs -n kube-system -l app=traffic-monitor --tail=100
 - Invalid applicationId or instanceId
 
 **Solutions**:
-```powershell
+```bash
 # Check logs for errors
-kubectl logs -n kube-system -l app=traffic-monitor | Select-String "ERROR"
+kubectl logs -n kube-system -l app=traffic-monitor | grep "ERROR"
 ```
 
 - Verify API key is correct in ConfigMap
@@ -298,12 +319,12 @@ kubectl logs -n kube-system -l app=traffic-monitor | Select-String "ERROR"
 - Insufficient permissions
 
 **Solutions**:
-```powershell
+```bash
 # Check pod status
 kubectl describe pod -n kube-system -l app=traffic-monitor
 
 # Check events
-kubectl get events -n kube-system --sort-by='.lastTimestamp' | Select-String "traffic-monitor"
+kubectl get events -n kube-system --sort-by='.lastTimestamp' | grep "traffic-monitor"
 
 # Verify ConfigMap exists
 kubectl get configmap -n kube-system traffic-monitor-config
@@ -313,7 +334,7 @@ kubectl get configmap -n kube-system traffic-monitor-config
 
 The DaemonSet performs automatic health checks. Check pod health:
 
-```powershell
+```bash
 # Check pod status
 kubectl get pods -n kube-system -l app=traffic-monitor
 
@@ -335,8 +356,17 @@ kubectl describe pod -n kube-system -l app=traffic-monitor
 
 **Option 1: Use Setup Script (Recommended)**
 
+**On Windows (PowerShell):**
 ```powershell
 .\setup-config.ps1
+# Add or remove services as prompted
+kubectl apply -f configmap.yaml
+kubectl delete pod -n kube-system -l app=traffic-monitor
+```
+
+**On Linux/macOS (Bash):**
+```bash
+./setup-config.sh
 # Add or remove services as prompted
 kubectl apply -f configmap.yaml
 kubectl delete pod -n kube-system -l app=traffic-monitor
@@ -351,7 +381,7 @@ kubectl delete pod -n kube-system -l app=traffic-monitor
 
 ### Change API URL
 
-1. Edit `configmap.yaml` and update `devApiUrl`
+1. Edit `configmap.yaml` and update `apisecUrl`
 2. Apply changes: `kubectl apply -f configmap.yaml`
 3. Restart pods: `kubectl delete pod -n kube-system -l app=traffic-monitor`
 

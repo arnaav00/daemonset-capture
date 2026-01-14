@@ -14,12 +14,34 @@ A DaemonSet that passively captures HTTP/HTTPS API endpoint traffic at the node 
 
 ## Quick Start
 
-### Pre-Step: Configure Service Mappings
+### Pre-Step 1: Create Applications in APISec Platform (for New Services)
+
+If you're onboarding a new service that doesn't have an application yet in the APISec platform:
+
+1. Log in to the APISec platform
+2. Create a new application (or use an existing one)
+3. Upload the `EmptySpec.yaml` file provided in this repository:
+   - Navigate to your application in the platform
+   - Upload `EmptySpec.yaml` as the OpenAPI specification
+   - This creates an empty application ready to receive endpoints
+4. Note the `applicationId` and `instanceId` from the URL:
+   - URL format: `https://apisec.ai/application/<applicationId>/instance/<instanceId>`
+
+**Note**: If your services already have applications in the platform, skip this step.
+
+### Pre-Step 2: Configure Service Mappings
 
 Before deploying, configure your services using the interactive setup script:
 
+**On Windows (PowerShell):**
 ```powershell
 .\setup-config.ps1
+```
+
+**On Linux/macOS (Bash):**
+```bash
+chmod +x setup-config.sh
+./setup-config.sh
 ```
 
 This script will:
@@ -38,7 +60,13 @@ The script generates a properly formatted `configmap.yaml` file.
 
 #### For the Traffic Monitor:
 
+**On Windows (PowerShell):**
 ```powershell
+docker build --no-cache -t traffic-monitor:latest .
+```
+
+**On Linux/macOS (Bash):**
+```bash
 docker build --no-cache -t traffic-monitor:latest .
 ```
 
@@ -60,7 +88,7 @@ cd ..
 
 **Deploy the example services to Kubernetes:**
 
-```powershell
+```bash
 # Deploy example-api
 kubectl apply -f example-app/deployment.yaml
 
@@ -74,13 +102,13 @@ kubectl get services
 
 ### 2. Deploy to Kubernetes
 
-```powershell
+```bash
 # Deploy traffic monitor DaemonSet
 kubectl apply -f daemonset.yaml
 kubectl apply -f configmap.yaml
 
 # Wait for ConfigMap to be ready
-Start-Sleep 10
+sleep 10
 
 # Restart pod to pick up configuration
 kubectl delete pod -n kube-system -l app=traffic-monitor
@@ -150,7 +178,7 @@ The `configmap.yaml` contains:
 {
   "apiKey": "YOUR_API_KEY",
   "autoOnboardNewServices": false,
-  "devApiUrl": "https://api.dev.apisecapps.com",
+  "apisecUrl": "https://api.apisecapps.com",
   "serviceMappings": {
     "service-name": {
       "appId": "application-id",
@@ -163,13 +191,15 @@ The `configmap.yaml` contains:
 
 ### Updating Configuration
 
-1. Edit `configmap.yaml` (or run `.\setup-config.ps1` again)
+1. Edit `configmap.yaml` (or run the setup script again):
+   - **Windows**: `.\setup-config.ps1`
+   - **Linux/macOS**: `./setup-config.sh`
 2. Apply changes:
-   ```powershell
+   ```bash
    kubectl apply -f configmap.yaml
    ```
 3. Restart DaemonSet pods:
-   ```powershell
+   ```bash
    kubectl delete pod -n kube-system -l app=traffic-monitor
    ```
 
@@ -181,7 +211,7 @@ The `configmap.yaml` contains:
 - Check logs: `kubectl logs -n kube-system -l app=traffic-monitor`
 
 ### Endpoints not pushed to platform
-- Verify `ENABLE_DEV_WEBSITE_INTEGRATION=true` in `daemonset.yaml` (already set)
+- Verify `ENABLE_APISEC_INTEGRATION=true` in `daemonset.yaml` (already set)
 - Check that API key is valid and not expired
 - Ensure service mappings are correct (service name matches Kubernetes service name)
 - Check logs for error messages: `kubectl logs -n kube-system -l app=traffic-monitor`

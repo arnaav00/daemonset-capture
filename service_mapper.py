@@ -29,7 +29,7 @@ class ServiceMapper:
             self.config = {
                 "apiKey": None,
                 "autoOnboardNewServices": False,
-                "devApiUrl": "https://api.dev.apisecapps.com",
+                "apisecUrl": "https://api.apisecapps.com",
                 "serviceMappings": {}
             }
     
@@ -95,7 +95,7 @@ class ServiceMapper:
             self.config = {
                 "apiKey": None,
                 "autoOnboardNewServices": False,
-                "devApiUrl": "https://api.dev.apisecapps.com",
+                "apisecUrl": "https://api.apisecapps.com",
                 "serviceMappings": {}
             }
     
@@ -151,15 +151,15 @@ class ServiceMapper:
                         # Preserve API key and other settings
                         api_key_preserved = self.config.get("apiKey")
                         auto_onboard_preserved = self.config.get("autoOnboardNewServices")
-                        dev_api_url_preserved = self.config.get("devApiUrl")
+                        apisec_url_preserved = self.config.get("apisecUrl")
                         self.config = current_config
                         # Restore settings from ConfigMap
                         if api_key_preserved:
                             self.config["apiKey"] = api_key_preserved
                         if auto_onboard_preserved is not None:
                             self.config["autoOnboardNewServices"] = auto_onboard_preserved
-                        if dev_api_url_preserved:
-                            self.config["devApiUrl"] = dev_api_url_preserved
+                        if apisec_url_preserved:
+                            self.config["apisecUrl"] = apisec_url_preserved
                 
                 # Reload saved mappings from writable path
                 if os.path.exists(self.write_path):
@@ -209,9 +209,9 @@ class ServiceMapper:
         """Check if auto-onboarding is enabled"""
         return self.config.get("autoOnboardNewServices", False)
     
-    def get_dev_api_url(self) -> str:
-        """Get the dev API URL"""
-        return self.config.get("devApiUrl", "https://api.dev.apisecapps.com")
+    def get_apisec_url(self) -> str:
+        """Get the APISec API URL"""
+        return self.config.get("apisecUrl", "https://api.apisecapps.com")
     
     def list_services(self) -> list:
         """List all configured services"""

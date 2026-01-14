@@ -39,8 +39,8 @@ spec:
               fieldPath: spec.nodeName
         - name: OUTPUT_FILE
           value: "/tmp/endpoints.json"
-        - name: ENABLE_DEV_WEBSITE_INTEGRATION
-          value: "true"  # Enable dev website integration
+        - name: ENABLE_APISEC_INTEGRATION
+          value: "true"  # Enable APISec platform integration
         - name: SERVICE_CONFIG_PATH
           value: "/etc/traffic-monitor/service_config.json"
         - name: CLEAR_SAVED_MAPPINGS

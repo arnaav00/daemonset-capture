@@ -97,7 +97,7 @@ foreach ($service in $serviceMappings.Keys) {
 $configJson = @{
     apiKey = $apiKey
     autoOnboardNewServices = $autoOnboardNewServices
-    devApiUrl = "https://api.dev.apisecapps.com"
+    apisecUrl = "https://api.apisecapps.com"
     serviceMappings = $serviceMappingsJson
 }
 

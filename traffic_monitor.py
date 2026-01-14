@@ -37,7 +37,7 @@ try:
 except ImportError as e:
     INTEGRATION_AVAILABLE = False
     print(f"WARNING: Integration components not available: {e}", file=sys.stderr)
-    print("Endpoint pushing to dev website will be disabled", file=sys.stderr)
+    print("Endpoint pushing to APISec platform will be disabled", file=sys.stderr)
 
 # Configure logging
 logging.basicConfig(
@@ -73,7 +73,7 @@ class TrafficMonitor:
         # Integration components (optional)
         self.service_mapper = None
         self.api_client = None
-        self.enable_integration = os.environ.get('ENABLE_DEV_WEBSITE_INTEGRATION', 'false').lower() == 'true'
+        self.enable_integration = os.environ.get('ENABLE_APISEC_INTEGRATION', 'true').lower() == 'true'
         
         # Lock for preventing concurrent auto-onboarding of the same service
         self._onboarding_locks: Dict[str, threading.Lock] = {}
@@ -101,9 +101,9 @@ class TrafficMonitor:
                     print(f"  🗑️  Clearing saved service mappings...", file=sys.stderr, flush=True)
                     self.service_mapper.clear_saved_mappings()
                 
-                dev_api_url = self.service_mapper.get_dev_api_url()
+                apisec_url = self.service_mapper.get_apisec_url()
                 api_key = self.service_mapper.get_api_key()
-                print(f"  Dev API URL: {dev_api_url}", file=sys.stderr, flush=True)
+                print(f"  APISec API URL: {apisec_url}", file=sys.stderr, flush=True)
                 print(f"  API key present: {bool(api_key)}", file=sys.stderr, flush=True)
                 if api_key:
                     print(f"  API key length: {len(api_key)}", file=sys.stderr, flush=True)
@@ -123,8 +123,8 @@ class TrafficMonitor:
                 else:
                     print(f"  ✓ No existing service mappings", file=sys.stderr, flush=True)
                 
-                self.api_client = DevWebsiteAPIClient(base_url=dev_api_url)
-                print(f"✓ Integration enabled: Dev website URL={dev_api_url}", file=sys.stderr, flush=True)
+                self.api_client = DevWebsiteAPIClient(base_url=apisec_url)
+                print(f"✓ Integration enabled: APISec API URL={apisec_url}", file=sys.stderr, flush=True)
             except Exception as e:
                 print(f"❌ ERROR: Failed to initialize integration components: {e}", file=sys.stderr, flush=True)
                 import traceback
@@ -238,7 +238,7 @@ class TrafficMonitor:
                 print(f"Error writing endpoint: {e}", file=sys.stderr)
     
     def _write_endpoint(self, endpoint: Dict):
-        """Write single endpoint to JSON file and optionally push to dev website"""
+        """Write single endpoint to JSON file and optionally push to APISec platform"""
         # Always write to file for backwards compatibility
         try:
             with open(self.output_file, 'a') as f:
@@ -248,7 +248,7 @@ class TrafficMonitor:
         except Exception as e:
             print(f"Error writing to file: {e}", file=sys.stderr)
         
-        # Push to dev website if integration is enabled
+        # Push to APISec platform if integration is enabled
         if not self.enable_integration:
             # Integration not enabled, skip silently
             return
@@ -302,8 +302,8 @@ class TrafficMonitor:
                           file=sys.stderr, flush=True)
                     
                     if app_id and instance_id:
-                        # Push to dev website in a separate thread to avoid blocking
-                        print(f"  🚀 Starting thread to push endpoint to dev website", file=sys.stderr, flush=True)
+                        # Push to APISec platform in a separate thread to avoid blocking
+                        print(f"  🚀 Starting thread to push endpoint to APISec platform", file=sys.stderr, flush=True)
                         threading.Thread(
                             target=self._push_endpoint_to_dev_website,
                             args=(app_id, instance_id, api_key, endpoint),
@@ -366,7 +366,7 @@ class TrafficMonitor:
                 print(f"Error in integration logic: {e}", file=sys.stderr, flush=True)
     
     def _push_endpoint_to_dev_website(self, app_id: str, instance_id: str, api_key: str, endpoint: Dict):
-        """Push endpoint to dev website (called in separate thread)"""
+        """Push endpoint to APISec platform (called in separate thread)"""
         try:
             if not api_key:
                 print(f"ERROR: API key is missing when pushing endpoint {endpoint.get('method')} {endpoint.get('endpoint')}", 
@@ -381,14 +381,14 @@ class TrafficMonitor:
             success = self.api_client.push_endpoint(app_id, instance_id, api_key, endpoint)
             if success:
                 _debug_print(f"[TRAFFIC_MONITOR] SUCCESS: Pushed endpoint {method} {raw_path}")
-                print(f"✓ Done! Pushed endpoint to dev website: {endpoint.get('method')} {endpoint.get('endpoint')} "
+                print(f"✓ Done! Pushed endpoint to APISec platform: {endpoint.get('method')} {endpoint.get('endpoint')} "
                       f"(appId={app_id}, instanceId={instance_id})", file=sys.stderr, flush=True)
             else:
                 _debug_print(f"[TRAFFIC_MONITOR] FAILED: Failed to push endpoint {method} {raw_path}")
                 print(f"✗ Failed to push endpoint: {endpoint.get('method')} {endpoint.get('endpoint')}", 
                       file=sys.stderr, flush=True)
         except Exception as e:
-            print(f"Error pushing endpoint to dev website: {e}", file=sys.stderr, flush=True)
+            print(f"Error pushing endpoint to APISec platform: {e}", file=sys.stderr, flush=True)
             import traceback
             traceback.print_exc(file=sys.stderr)
     
